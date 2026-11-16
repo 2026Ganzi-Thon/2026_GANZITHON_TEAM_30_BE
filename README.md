@@ -10,6 +10,8 @@ python -m venv .venv
 pip install -r requirements.txt
 python seed.py                  # 테스트 계정 생성 (선택)
 python demo_seed.py --job 개발 --reset   # 발표용 데이터 (DB를 비우고 새로 만듦, 서버를 끄고 실행)
+python demo_seed_b.py                    # 시연용 고민 추가 + 유사 검색용 임베딩 (demo_seed.py 다음에)
+pytest -q                                # 테스트
 uvicorn app.main:app --reload
 ```
 
@@ -41,6 +43,11 @@ API 문서: http://localhost:8000/docs
 | GET | /users/{id}/posts?island_id= | 이웃 한 명의 공개 고민 |
 | GET | /users/me/posts | 내 고민 (나만 보기 포함, `visibility` 필터) |
 | GET | /users/me/comments | 내가 쓴 댓글 |
+| POST | /posts | 고민 작성 (게시 전 검사, 반려 시 422 `{code, reason, suggestion, issues}`, 위기 신호면 201 + `crisis_support`) |
+| PATCH | /posts/{id} | 내 고민 수정 (내용 변경·공개 전환 시 다시 검사) |
+| DELETE | /posts/{id} | 내 고민 삭제 |
+| GET | /search?q=&island_id= | 비슷한 고민 검색 (임베딩 유사도 순, 결과 없으면 `empty: true` + 추천 키워드) |
+| GET | /search/keywords | 자주 찾는 키워드 (토큰 불필요) |
 | GET | /posts/{id} | 고민 상세 + 댓글 + 공감 (내 글이면 알림 읽음 처리) |
 | POST | /posts/{id}/comments | 댓글 작성 (부적절하면 422 `{reason, suggestion}`) |
 | DELETE | /posts/{id}/comments/{comment_id} | 내 댓글 삭제 |
@@ -64,3 +71,13 @@ API 문서: http://localhost:8000/docs
 | ACCESS_TOKEN_EXPIRE_MINUTES | 1440 (1일) |
 | CORS_ORIGINS | * (배포 시 프론트 주소, 쉼표로 여러 개) |
 | UPSTAGE_API_KEY | 없음 (AI 기능용, 서버에만 설정) |
+| GEMINI_API_KEY | 없음 (Upstage 대신 Gemini를 쓸 때) |
+| AI_PROVIDER | auto (`upstage` / `gemini` / `local`) |
+| SEARCH_MIN_SIMILARITY | 제공사별 기본값 (upstage 0.35, gemini 0.55, local 0.12) |
+
+## AI 기능 (B, `app/ai/`)
+
+- 고민 작성 흐름: 검사(`check_text`) → 저장 → [백그라운드] 임베딩(`embed`) → AI 첫 댓글(`write_first_comment`, 공개 글만, `is_ai=true`)
+- 검사는 규칙(전화번호·이메일·주민번호·대표 회사명·욕설·위기 표현)을 항상 돌리고, LLM 결과가 5초 안에 오면 합친다. AI가 실패·429여도 게시는 된다.
+- 나만 보기 글은 반려하지 않고 위기 신호만 확인한다. AI 첫 댓글·검색에서도 빠진다.
+- 프롬프트는 `app/ai/prompts.py`에서 고친다.
