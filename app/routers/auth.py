@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
-from app.config import CHARACTERS, JOBS, YEARS
+from app.config import CHARACTERS, COMFORT_TYPES, JOBS, TOPIC_CATEGORIES, YEARS
 from app.database import get_db
 from app.deps import get_current_user, get_token_payload
 from app.queries import withdraw_user
@@ -23,7 +23,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.get("/options")
 def signup_options():
-    return {"jobs": JOBS, "years": YEARS, "characters": CHARACTERS}
+    return {
+        "jobs": JOBS,
+        "years": YEARS,
+        "characters": CHARACTERS,
+        "topics": TOPIC_CATEGORIES,
+        "comfort_types": COMFORT_TYPES,
+    }
 
 
 @router.get("/nickname", response_model=NicknameSuggestion)

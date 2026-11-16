@@ -19,8 +19,8 @@ API 문서: http://localhost:8000/docs
 
 | 메서드 | 경로 | 설명 | 토큰 |
 |---|---|---|---|
-| GET | /auth/options | 직무·연차·캐릭터 선택지 | - |
-| GET | /auth/nickname?character=otter | 선택한 캐릭터 + 랜덤 형용사 닉네임 추천 | - |
+| GET | /auth/options | 직무·연차·캐릭터·고민 주제·위로 방식 선택지 (FE와 같은 값) | - |
+| GET | /auth/nickname?character=tiger | 선택한 캐릭터 + 랜덤 형용사 닉네임 추천 | - |
 | POST | /auth/signup | 회원가입 (이메일 형식만 검사, 캐릭터·개인정보 동의 필수, 연차 선택) | - |
 | POST | /auth/login | 로그인 → access_token 발급 | - |
 | POST | /auth/logout | 현재 토큰 폐기 | 필요 |

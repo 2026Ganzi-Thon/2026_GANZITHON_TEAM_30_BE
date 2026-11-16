@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from app.config import CHARACTERS, JOBS, YEARS
+from app.config import CHARACTERS, COMMENT_MAX, JOBS, YEARS
 
 class SignupRequest(BaseModel):
     email: EmailStr  # 회사 이메일: 해커톤에서는 '이메일 형식'만 검사
@@ -121,7 +121,7 @@ class UserResponse(BaseModel):
     character: str
 
 class CommentCreate(BaseModel):
-    content: str = Field(min_length=1, max_length=500)
+    content: str = Field(min_length=1, max_length=COMMENT_MAX)
     @field_validator('content')
     @classmethod
     def not_blank( cls, v: str) -> str:

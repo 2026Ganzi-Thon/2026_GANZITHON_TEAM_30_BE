@@ -17,26 +17,46 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24))  # 1일
 
-JOBS = ["개발", "디자인", "기획", "마케팅", "영업", "인사", "재무", "기타"]
-YEARS = ["1년 미만", "1~3년", "3~5년", "5~10년", "10년 이상"]
+# 아래 선택지는 FE 레포(js/app.js, js/village.js)와 같은 값으로 맞춘 것. 바꿀 때는 FE와 함께 바꿀 것.
+JOBS = ["디자인", "영업", "개발"]
+YEARS = ["1년 미만", "1~3년", "4~6년", "7~10년", "11년 이상"]
 
-TOPICS = ["업무 적응", "인간관계", "진로·이직", "워라밸", "기타"]
+# 대분류 → 소분류. 글에는 소분류(TOPICS) 하나를 저장한다.
+TOPIC_CATEGORIES = {
+    "업무·직장생활": ["업무량·스트레스", "직장 내 관계·갈등", "업무 실수", "성과 압박", "조직 문화", "워라밸", "직장 내 괴롭힘"],
+    "진로·성장": ["진로·직무 적성", "이직·퇴사", "커리어 성장·역량", "취업·입사 적응", "미래 불안"],
+    "감정·마음": ["번아웃·무기력", "불안·걱정", "외로움·고립감", "자존감·비교", "감정 조절"],
+    "관계·일상": ["인간관계·갈등", "연애·이별", "가족·결혼", "경제·금전", "건강·생활습관"],
+}
+TOPICS = [topic for topics in TOPIC_CATEGORIES.values() for topic in topics]
 
 COMFORT_TYPES = {
-    "empathy": "공감해주세요",
+    "empathy": "들어주세요",
     "experience": "경험을 나눠주세요",
-    "opinion": "의견을 들려주세요",
+    "opinion": "함께 생각해주세요",
 }
+
+POST_TITLE_MAX = 40
+POST_CONTENT_MAX = 1000
+COMMENT_MAX = 400
 
 ISLAND_COUNT_DAYS = 7
 
+# 순서가 FE 캐릭터 이미지 번호(assets/characters/0~12.png)와 같다.
 CHARACTERS = {
-    "otter": "수달",
-    "fox": "여우",
-    "bear": "곰",
+    "rat": "쥐",
+    "ox": "소",
+    "tiger": "호랑이",
     "rabbit": "토끼",
-    "cat": "고양이",
-    "penguin": "펭귄",
+    "dragon": "용",
+    "snake": "뱀",
+    "horse": "말",
+    "sheep": "양",
+    "monkey": "원숭이",
+    "rooster": "닭",
+    "dog": "개",
+    "pig": "돼지",
+    "lion": "사자",
 }
 
 

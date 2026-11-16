@@ -10,23 +10,23 @@ from app.security import hash_password
 TEST_PASSWORD = "test1234!"
 
 TEST_USERS = [
-    {"email": "dev1@example.com", "job": "개발", "years": "1~3년", "character": "otter"},
-    {"email": "dev2@example.com", "job": "개발", "years": "3~5년", "character": "bear"},
-    {"email": "design1@example.com", "job": "디자인", "years": "1년 미만", "character": "rabbit"},
-    {"email": "pm1@example.com", "job": "기획", "years": None, "character": "fox"},  # 연차 선택 안 함
-    {"email": "mkt1@example.com", "job": "마케팅", "years": "5~10년", "character": "penguin"},
+    {"email": "dev1@example.com", "job": "개발", "years": "1~3년", "character": "rabbit"},
+    {"email": "dev2@example.com", "job": "개발", "years": "4~6년", "character": "tiger"},
+    {"email": "design1@example.com", "job": "디자인", "years": "1년 미만", "character": "sheep"},
+    {"email": "sales1@example.com", "job": "영업", "years": None, "character": "dog"},  # 연차 선택 안 함
+    {"email": "design2@example.com", "job": "디자인", "years": "7~10년", "character": "lion"},
 ]
 
 SAMPLE_POSTS = [
-    ("dev1@example.com", "job", "인간관계", "코드 리뷰가 너무 무서워요",
+    ("dev1@example.com", "job", "직장 내 관계·갈등", "코드 리뷰가 너무 무서워요",
      "리뷰 코멘트가 달릴 때마다 제가 부족한 사람 같아서 위축돼요. 다들 어떻게 견디세요?", "empathy"),
-    ("dev2@example.com", "job", "업무 적응", "레거시 코드 앞에서 막막해요",
+    ("dev2@example.com", "job", "업무량·스트레스", "레거시 코드 앞에서 막막해요",
      "입사하자마자 10년 된 코드를 맡았는데 문서가 하나도 없어요.", "experience"),
     ("dev1@example.com", "job", "워라밸", "야근이 당연한 분위기",
      "팀 전체가 늦게까지 남아 있어서 먼저 퇴근하기가 눈치 보여요.", "opinion"),
-    ("design1@example.com", "common", "인간관계", "개발자와 소통이 어려워요",
+    ("design1@example.com", "common", "직장 내 관계·갈등", "개발자와 소통이 어려워요",
      "디자인 의도를 설명해도 구현이 자꾸 다르게 나와요. 협업 팁이 있을까요?", "opinion"),
-    ("pm1@example.com", "common", "진로·이직", "이직을 고민 중이에요",
+    ("sales1@example.com", "common", "이직·퇴사", "이직을 고민 중이에요",
      "지금 회사에서 3년째인데 성장이 멈춘 느낌이에요.", "experience"),
 ]
 
@@ -81,8 +81,8 @@ SAMPLE_COMMENTS = [
 
 SAMPLE_REACTIONS = [
     ("코드 리뷰가 너무 무서워요", "dev2@example.com"),
-    ("개발자와 소통이 어려워요", "pm1@example.com"),
-    ("이직을 고민 중이에요", "mkt1@example.com"),
+    ("개발자와 소통이 어려워요", "sales1@example.com"),
+    ("이직을 고민 중이에요", "design2@example.com"),
 ]
 
 
@@ -107,7 +107,7 @@ def seed_interactions(db):
     dev1 = users["dev1@example.com"]
     dev_island = db.scalar(select(Island).where(Island.type == "job", Island.job == dev1.job))
     db.add(Post(
-        user_id=dev1.id, island_id=dev_island.id, topic="기타", title="아무에게도 말 못 한 이야기",
+        user_id=dev1.id, island_id=dev_island.id, topic="불안·걱정", title="아무에게도 말 못 한 이야기",
         content="나만 보기로 써 두는 글이에요.", comfort_type="empathy", visibility="private", status="published",
     ))
     db.commit()
