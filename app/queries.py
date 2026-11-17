@@ -98,7 +98,6 @@ def withdraw_user(db: Session, user: User, token_payload: dict) -> None:
     """개인정보만 지우고 게시글이랑 댓글은 남김"""
     user.email = f'left-{user.id}@deleted.invalid'
     user.nickname = f'left-{user.id}'
-    user.password_hash = ""
     user.years = None
     user.deleted_at = datetime.now(timezone.utc)
 

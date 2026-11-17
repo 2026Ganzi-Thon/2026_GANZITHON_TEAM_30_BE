@@ -13,9 +13,6 @@ from app.database import Base, SessionLocal, engine
 from app.models import Comment, Island, Notification, Post, Reaction, User
 from app.nickname import generate_unique_nickname
 from app.queries import ensure_islands
-from app.security import hash_password
-
-PASSWORD = "test1234!"
 NOW = datetime.now(timezone.utc)
 
 # key: (이메일, 직무("demo"=발표 직무 / 0·1=발표 직무를 뺀 나머지 직무 순번), 캐릭터, 연차)
@@ -165,7 +162,6 @@ def main(job: str, reset: bool) -> None:
         for key, (email, job_ref, character, years) in USERS.items():
             user = User(
                 email=email,
-                password_hash=hash_password(PASSWORD),
                 job=job if job_ref == "demo" else other_jobs[job_ref],
                 years=years,
                 nickname=generate_unique_nickname(db, character),
@@ -221,15 +217,14 @@ def main(job: str, reset: bool) -> None:
         left = users["left"]
         left.email = f"left-{left.id}@deleted.invalid"
         left.nickname = f"left-{left.id}"
-        left.password_hash = ""
         left.years = None
         left.deleted_at = ago(24)
 
         db.commit()
 
     print(f"데모 데이터 생성 완료 (발표 직무: {job}섬 + 통합섬)")
-    print(f"발표 계정: {USERS['me'][0]} / {PASSWORD}")
-    print(f"이웃 계정: neighbor1~6@example.com, other1~5@example.com (비밀번호 동일)")
+    print(f"발표 계정: {USERS['me'][0]} (이메일 + 인증코드, EMAIL_MODE=demo면 체험용 코드 표시)")
+    print("이웃 계정: neighbor1~6@example.com, other1~5@example.com")
     print("검색 시연 키워드: 야근, 이직, 상사, 번아웃")
     print("욕설 차단 시연: 댓글에 금칙어를 넣어 보세요 (B의 check_text 기준)")
     print("※ 비슷한 고민 검색은 B의 임베딩 생성이 따로 필요합니다")

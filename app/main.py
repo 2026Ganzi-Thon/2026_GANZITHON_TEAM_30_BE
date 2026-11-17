@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app import models  
-from app.database import Base, SessionLocal, engine
+from app.database import Base, SessionLocal, engine, upgrade_schema
 from app.queries import ensure_islands
 from app.config import CORS_ORIGINS
 from app.routers import auth, islands, notifications, posts, safety, users
@@ -11,6 +11,7 @@ from app.routers import auth, islands, notifications, posts, safety, users
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    upgrade_schema()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         ensure_islands(db)

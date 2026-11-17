@@ -1,24 +1,10 @@
-"""비밀번호 해싱과 JWT 토큰 발급/검증."""
+"""JWT 토큰 발급/검증. (비밀번호 없이 이메일로 로그인)"""
 import uuid
 from datetime import datetime, timedelta, timezone
 
-import bcrypt
 import jwt
 
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM, SECRET_KEY
-
-
-# ---------- 비밀번호 ----------
-
-def hash_password(password: str) -> str:
-    """평문 비밀번호 → bcrypt 해시 문자열. gensalt()가 매번 다른 salt를 만들어
-    같은 비밀번호라도 해시값이 달라진다 (레인보우 테이블 공격 방지)."""
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    """입력 비밀번호를 저장된 해시와 비교. 해시 안에 salt가 들어 있어서 따로 저장할 필요 없음."""
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
 # ---------- JWT ----------

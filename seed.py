@@ -5,9 +5,6 @@ from app.database import Base, SessionLocal, engine
 from app.models import Comment, Island, Post, Reaction, User
 from app.nickname import generate_unique_nickname
 from app.queries import add_ai_comment, create_notification, ensure_islands
-from app.security import hash_password
-
-TEST_PASSWORD = "test1234!"
 
 TEST_USERS = [
     {"email": "dev1@example.com", "job": "개발", "years": "1~3년", "character": "rabbit"},
@@ -43,7 +40,6 @@ def main():
             nickname = generate_unique_nickname(db, data["character"])
             db.add(User(
                 **data,
-                password_hash=hash_password(TEST_PASSWORD),
                 nickname=nickname,
                 privacy_agreed_at=datetime.now(timezone.utc),
             ))
@@ -69,7 +65,7 @@ def main():
         if db.scalar(select(Comment.id)) is None:
             seed_interactions(db)
             print("demo   댓글·공감·알림")
-    print(f"\n모든 테스트 계정 비밀번호: {TEST_PASSWORD}")
+    print("\n로그인: 이메일 입력 → 인증코드 받기 (EMAIL_MODE=demo면 화면의 체험용 코드 입력)")
 
 
 SAMPLE_COMMENTS = [

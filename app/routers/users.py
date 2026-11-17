@@ -31,7 +31,7 @@ def get_my_posts(
 
     post_ids = [p.id for p in posts]
     counts = dict(db.execute(
-        select(Comment.post_id, func.count()).where(Comment.post_id.in_(post_ids)).group_by(Comment.post_id)
+        select(Comment.post_id, func.count()).where(Comment.deleted_at.is_(None), Comment.post_id.in_(post_ids)).group_by(Comment.post_id)
     ).all()) if post_ids else {}
     islands = {i.id: i for i in db.scalars(select(Island).where(Island.id.in_({p.island_id for p in posts})))}
     unread = set(db.scalars(
@@ -54,7 +54,7 @@ def get_my_posts(
 def get_my_comments(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.execute(
         select(Comment, Post).join(Post, Post.id == Comment.post_id)
-        .where(Comment.user_id == me.id)
+        .where(Comment.user_id == me.id, Comment.deleted_at.is_(None))
         .order_by(Comment.id.desc())
     ).all()
     hidden = blocked_user_ids(db, me.id)
@@ -101,7 +101,7 @@ def get_user_posts(
         public_posts().where(Post.user_id == target.id, Post.island_id == island.id).order_by(Post.id.desc())
     ).all()
     counts = dict(db.execute(
-        select(Comment.post_id, func.count()).where(Comment.post_id.in_([p.id for p in posts])).group_by(Comment.post_id)
+        select(Comment.post_id, func.count()).where(Comment.deleted_at.is_(None), Comment.post_id.in_([p.id for p in posts])).group_by(Comment.post_id)
     ).all()) if posts else {}
     author = to_author(target, island)
     return [

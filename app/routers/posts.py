@@ -2,7 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
 from app.ai import check_text
+from app.config import DELETED_COMMENT
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Comment, Island, Notification, Post, Reaction, User
@@ -73,17 +75,22 @@ def get_post_detail(post_id: int, me: User = Depends(get_current_user), db: Sess
         is_mine=is_mine,
         reaction_count=reaction_count(db, post.id),
         reacted_by_me=bool(db.scalar(select(exists().where(Reaction.post_id == post.id, Reaction.user_id == me.id)))),
-        comments=[
-            CommentOut(
-                id=c.id,
-                content=c.content,
-                is_ai=c.is_ai,
-                author=None if c.user_id is None else to_author(users[c.user_id], island),
-                is_mine=c.user_id == me.id,
-                created_at=c.created_at,
-            )
-            for c in comments
-        ],
+        comments=[comment_out(c, users, island, me) for c in comments],
+    )
+
+
+def comment_out(c: Comment, users: dict[int, User], island: Island, me: User) -> CommentOut:
+    """삭제된 댓글은 자리만 남기고 내용·작성자를 숨긴다."""
+    if c.deleted_at is not None:
+        return CommentOut(id=c.id, content=DELETED_COMMENT, is_ai=c.is_ai, is_deleted=True,
+                          author=None, is_mine=False, created_at=c.created_at)
+    return CommentOut(
+        id=c.id,
+        content=c.content,
+        is_ai=c.is_ai,
+        author=None if c.user_id is None else to_author(users[c.user_id], island),
+        is_mine=c.user_id == me.id,
+        created_at=c.created_at,
     )
 
 
@@ -128,12 +135,14 @@ def delete_comment(
     me: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """내 댓글만 삭제. 행은 남기고 내용을 지워서 상세에 "삭제된 댓글입니다"로 보이게 한다."""
     comment = db.get(Comment, comment_id)
-    if comment is None or comment.post_id != post_id:
+    if comment is None or comment.post_id != post_id or comment.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "댓글을 찾을 수 없습니다")
-    if comment.user_id != me.id:
+    if comment.user_id is None or comment.user_id != me.id:  # AI 댓글·남의 댓글은 삭제 불가
         raise HTTPException(status.HTTP_403_FORBIDDEN, "내 댓글만 삭제할 수 있습니다")
-    db.delete(comment)
+    comment.content = ""  # 원문은 남기지 않는다
+    comment.deleted_at = datetime.now(timezone.utc)
     db.commit()
 
 

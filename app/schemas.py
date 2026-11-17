@@ -4,20 +4,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from app.config import CHARACTERS, COMMENT_MAX, JOBS, YEARS
 
 class SignupRequest(BaseModel):
-    email: EmailStr  # 회사 이메일: 해커톤에서는 '이메일 형식'만 검사
-    password: str = Field(min_length=8)
+    email: EmailStr  # 회사 이메일: 형식 검사 + 이메일 인증코드로 본인 확인 (비밀번호 없음)
+    code: str = Field(pattern=r"^\d{6}$", description="이메일로 받은 6자리 인증코드")
     job: str
     years: str | None = None  
     character: str  
     nickname: str | None = Field(default=None, max_length=30)
     agree_privacy: bool 
-
-    @field_validator("password")
-    @classmethod
-    def password_byte_limit(cls, v: str) -> str:
-        if len(v.encode("utf-8")) > 72:
-            raise ValueError("비밀번호가 너무 깁니다 (최대 72바이트)")
-        return v
 
     @field_validator("job")
     @classmethod
@@ -26,9 +19,12 @@ class SignupRequest(BaseModel):
             raise ValueError(f"직무는 {JOBS} 중 하나여야 합니다")
         return v
 
-    @field_validator("years")
+    @field_validator("years", mode="before")
     @classmethod
     def years_must_exist(cls, v: str | None) -> str | None:
+        # FE의 "선택 안 함"은 빈 문자열("")로 온다 → 연차 없음(None)으로 저장
+        if isinstance(v, str) and not v.strip():
+            return None
         if v is not None and v not in YEARS:
             raise ValueError(f"연차는 {YEARS} 중 하나이거나 비워 두어야 합니다")
         return v
@@ -50,7 +46,18 @@ class SignupRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    code: str = Field(pattern=r"^\d{6}$", description="이메일로 받은 6자리 인증코드")
+
+
+class EmailCodeRequest(BaseModel):
+    email: EmailStr
+    purpose: Literal["signup", "login"]
+
+
+class EmailCodeOut(BaseModel):
+    expires_in: int  # 코드 유효 시간(초)
+    resend_after: int  # 다시 받기까지 기다릴 시간(초)
+    demo_code: str | None = None  # EMAIL_MODE=demo일 때만. FE는 "체험용 인증코드: 123456"으로 표시
 
 
 class TokenResponse(BaseModel):
@@ -132,9 +139,10 @@ class CommentCreate(BaseModel):
 
 class CommentOut(BaseModel):
     id: int
-    content: str
+    content: str  # 삭제된 댓글이면 "삭제된 댓글입니다"
     is_ai: bool
-    author: AuthorOut | None #ai댓글이면 None
+    is_deleted: bool = False
+    author: AuthorOut | None  # AI 댓글·삭제된 댓글이면 None
     is_mine: bool
     created_at: datetime
 

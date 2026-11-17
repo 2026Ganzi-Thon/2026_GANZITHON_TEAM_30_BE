@@ -116,7 +116,7 @@ def list_island_posts(
 
     post_ids = [p.id for p in posts]
     counts = dict(db.execute(
-        select(Comment.post_id, func.count()).where(Comment.post_id.in_(post_ids)).group_by(Comment.post_id)
+        select(Comment.post_id, func.count()).where(Comment.deleted_at.is_(None), Comment.post_id.in_(post_ids)).group_by(Comment.post_id)
     ).all()) if post_ids else {}
     authors = {u.id: u for u in db.scalars(select(User).where(User.id.in_({p.user_id for p in posts})))}
 

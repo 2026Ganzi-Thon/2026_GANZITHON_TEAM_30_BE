@@ -61,4 +61,23 @@ CHARACTERS = {
 
 
 LEFT_NICKNAME = '떠난 이용자'
+DELETED_COMMENT = '삭제된 댓글입니다'
 LEFT_CHARACTER = 'left'
+
+# ---------- 이메일 인증코드 ----------
+# demo: 메일을 보내지 않고 응답(demo_code)에 코드를 담는다 (시연·개발용)
+# smtp: 실제 메일 발송 (Gmail이면 SMTP_HOST=smtp.gmail.com, SMTP_PORT=465, 앱 비밀번호 사용)
+EMAIL_MODE = os.getenv("EMAIL_MODE", "demo")
+if EMAIL_MODE not in ("demo", "smtp"):
+    raise RuntimeError("EMAIL_MODE는 demo 또는 smtp여야 합니다")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 465))  # 465 = SSL, 587 = STARTTLS
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
+if EMAIL_MODE == "smtp" and not (SMTP_USER and SMTP_PASSWORD):
+    raise RuntimeError("EMAIL_MODE=smtp이면 SMTP_USER와 SMTP_PASSWORD를 설정해야 합니다")
+
+EMAIL_CODE_TTL_SECONDS = 5 * 60  # 코드 유효 시간
+EMAIL_CODE_RESEND_SECONDS = 60  # 같은 이메일로 다시 받기까지 기다리는 시간
+EMAIL_CODE_MAX_ATTEMPTS = 5  # 이 횟수만큼 틀리면 그 코드는 폐기
