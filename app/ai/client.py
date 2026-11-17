@@ -35,15 +35,19 @@ def _post(url: str, *, headers: dict, body: dict, timeout: float) -> dict:
 def chat(system: str, user: str, *, json_mode: bool = False, temperature: float = 0.3, timeout: float) -> str:
     p = settings.provider()
     if p == "upstage":
+        body = {
+            "model": settings.UPSTAGE_CHAT_MODEL,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "temperature": temperature,
+            "stream": False,
+        }
+        if json_mode:
+            # 없으면 가끔 쉼표가 두 번 찍힌 JSON(",,")이 와서 검사가 규칙 검사로 떨어진다 (실측 약 8%)
+            body["response_format"] = {"type": "json_object"}
         data = _post(
             f"{settings.UPSTAGE_BASE_URL}/chat/completions",
             headers={"Authorization": f"Bearer {settings.UPSTAGE_API_KEY}"},
-            body={
-                "model": settings.UPSTAGE_CHAT_MODEL,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                "temperature": temperature,
-                "stream": False,
-            },
+            body=body,
             timeout=timeout,
         )
         try:
@@ -74,8 +78,15 @@ def chat(system: str, user: str, *, json_mode: bool = False, temperature: float 
 
 
 def chat_json(system: str, user: str, *, timeout: float) -> dict:
-    text = chat(system, user, json_mode=True, temperature=0.0, timeout=timeout)
-    return parse_json_object(text)
+    """JSON 답을 dict로 받는다. 형식이 깨져 오면 한 번만 다시 묻는다 (연결 실패·시간 초과는 바로 포기)."""
+    for attempt in range(2):
+        text = chat(system, user, json_mode=True, temperature=0.0, timeout=timeout)
+        try:
+            return parse_json_object(text)
+        except AIUnavailable:
+            if attempt == 1:
+                raise
+    raise AIUnavailable("unreachable")
 
 
 def parse_json_object(text: str) -> dict:
