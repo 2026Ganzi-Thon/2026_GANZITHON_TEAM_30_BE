@@ -73,7 +73,7 @@ API 문서: http://localhost:8000/docs
 | UPSTAGE_API_KEY | 없음 (AI 기능용, 서버에만 설정) |
 | GEMINI_API_KEY | 없음 (Upstage 대신 Gemini를 쓸 때) |
 | AI_PROVIDER | auto (`upstage` / `gemini` / `local`) |
-| SEARCH_MIN_SIMILARITY | 제공사별 기본값 (upstage 0.35, gemini 0.55, local 0.12) |
+| SEARCH_MIN_SIMILARITY | 제공사별 기본값 (upstage 0.30, gemini 0.55, local 0.12) |
 
 ## AI 기능 (B, `app/ai/`)
 

@@ -15,7 +15,7 @@ AI_PROVIDER = os.getenv("AI_PROVIDER", "auto").strip().lower()
 
 UPSTAGE_API_KEY = os.getenv("UPSTAGE_API_KEY", "").strip()
 UPSTAGE_BASE_URL = os.getenv("UPSTAGE_BASE_URL", "https://api.upstage.ai/v1").rstrip("/")
-UPSTAGE_CHAT_MODEL = os.getenv("UPSTAGE_CHAT_MODEL", "solar-pro2")
+UPSTAGE_CHAT_MODEL = os.getenv("UPSTAGE_CHAT_MODEL", "solar-mini4")
 UPSTAGE_EMBED_QUERY_MODEL = os.getenv("UPSTAGE_EMBED_QUERY_MODEL", "embedding-query")
 UPSTAGE_EMBED_PASSAGE_MODEL = os.getenv("UPSTAGE_EMBED_PASSAGE_MODEL", "embedding-passage")
 
@@ -33,7 +33,7 @@ BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("AI_BACKGROUND_TIMEOUT", "15"))
 LOCAL_EMBED_DIM = 512
 
 # 유사도가 이 값보다 낮으면 "결과 없음". 제공사마다 점수 분포가 달라 기본값을 따로 둔다.
-_DEFAULT_MIN_SIMILARITY = {"upstage": 0.35, "gemini": 0.55, "local": 0.12}
+_DEFAULT_MIN_SIMILARITY = {"upstage": 0.30, "gemini": 0.55, "local": 0.12}
 _MIN_SIMILARITY_OVERRIDE = os.getenv("SEARCH_MIN_SIMILARITY")
 SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "10"))
 
