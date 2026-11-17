@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Comment, Island, Notification, Post, User
 from app.queries import blocked_user_ids, get_accessible_island, public_posts
 from app.routers.islands import to_author
-from app.schemas import AuthorOut, MyCommentOut, MyPostOut, PostSummary
+from app.nickname import generate_unique_nickname, is_valid_nickname, nickname_taken
+from app.schemas import AuthorOut, MyCommentOut, MyPostOut, PostSummary, ProfileUpdate, UserResponse
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -16,6 +18,32 @@ def get_visible_user(db: Session, user_id: int, me: User) -> User:
     if target is None or target.deleted_at is not None or target.id in blocked_user_ids(db, me.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "사용자를 찾을 수 없습니다")
     return target
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_my_profile(body: ProfileUpdate, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """닉네임·캐릭터 변경. 닉네임의 동물은 항상 캐릭터와 같아야 한다."""
+    character = body.character or me.character
+    if body.nickname:
+        if not is_valid_nickname(body.nickname, character):
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "닉네임은 추천받은 형식(형용사 + 선택한 동물 + 4자리 숫자)이어야 합니다",
+            )
+        if body.nickname != me.nickname and nickname_taken(db, body.nickname):
+            raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 닉네임입니다. 다시 뽑아 주세요")
+        me.nickname = body.nickname
+    elif character != me.character:
+        # 캐릭터만 바꾸면 예전 닉네임의 동물과 어긋나므로 새 동물로 다시 만든다
+        me.nickname = generate_unique_nickname(db, character)
+    me.character = character
+    try:
+        db.commit()
+    except IntegrityError:  # 동시에 같은 닉네임을 고른 경우
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 닉네임입니다. 다시 뽑아 주세요")
+    db.refresh(me)
+    return me
 
 
 @router.get("/me/posts", response_model=list[MyPostOut])

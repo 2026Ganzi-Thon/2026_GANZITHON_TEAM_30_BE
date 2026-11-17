@@ -1,4 +1,4 @@
-"""익명 닉네임 생성: 사용자가 고른 동물 + 랜덤 형용사. 예) 수달 선택 → "포근한 수달" """
+"""익명 닉네임 생성: 랜덤 형용사 + 사용자가 고른 동물 + 4자리 숫자. 예) 호랑이 선택 → "포근한 호랑이 4821" """
 import random
 import re
 
@@ -17,8 +17,8 @@ ADJECTIVES = [  # FE js/app.js와 같은 목록
 
 
 def make_nickname(character: str) -> str:
-    """선택한 동물 이름 앞에 랜덤 형용사를 붙인다."""
-    return f"{random.choice(ADJECTIVES)} {CHARACTERS[character]}"
+    """형용사 + 동물 + 4자리 숫자(1000~9999). 숫자가 있어 같은 동물끼리도 거의 겹치지 않는다."""
+    return f"{random.choice(ADJECTIVES)} {CHARACTERS[character]} {random.randint(1000, 9999)}"
 
 
 def nickname_taken(db: Session, nickname: str) -> bool:
@@ -26,18 +26,15 @@ def nickname_taken(db: Session, nickname: str) -> bool:
 
 
 def generate_unique_nickname(db: Session, character: str) -> str:
-    """DB에 없는 닉네임이 나올 때까지 뽑는다. 형용사 조합이 다 차면 뒤에 숫자를 붙인다."""
-    for _ in range(20):
-        nickname = make_nickname(character)
-        if not nickname_taken(db, nickname):
-            return nickname
+    """DB에 없는 닉네임이 나올 때까지 뽑는다 (동물 하나당 24 x 9000가지라 거의 한 번에 끝난다)."""
     while True:
-        nickname = f"{make_nickname(character)}{random.randint(100, 9999)}"
+        nickname = make_nickname(character)
         if not nickname_taken(db, nickname):
             return nickname
 
 
 def is_valid_nickname(nickname: str, character: str) -> bool:
+    """"형용사 동물 숫자4자리" 형식이고, 동물이 선택한 캐릭터와 같은지 확인한다."""
     adjectives = "|".join(map(re.escape, ADJECTIVES))
     animal = re.escape(CHARACTERS[character])
-    return re.fullmatch(rf"({adjectives}) {animal}(\d{{3,4}})?", nickname) is not None
+    return re.fullmatch(rf"({adjectives}) {animal} [1-9]\d{{3}}", nickname) is not None

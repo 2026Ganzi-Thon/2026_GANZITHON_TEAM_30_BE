@@ -77,7 +77,7 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
 
     if body.nickname:
         if not is_valid_nickname(body.nickname, body.character):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "닉네임은 추천받은 형식(형용사 + 선택한 동물)이어야 합니다")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "닉네임은 추천받은 형식(형용사 + 선택한 동물 + 4자리 숫자)이어야 합니다")
         if nickname_taken(db, body.nickname):
             raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 닉네임입니다. 다시 뽑아 주세요")
         nickname = body.nickname

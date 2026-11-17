@@ -22,7 +22,7 @@ API 문서: http://localhost:8000/docs
 | 메서드 | 경로 | 설명 | 토큰 |
 |---|---|---|---|
 | GET | /auth/options | 직무·연차·캐릭터·고민 주제·위로 방식 선택지 (FE와 같은 값) | - |
-| GET | /auth/nickname?character=tiger | 선택한 캐릭터 + 랜덤 형용사 닉네임 추천 | - |
+| GET | /auth/nickname?character=tiger | 닉네임 추천 (형용사 + 캐릭터 + 4자리 숫자, 예: 포근한 호랑이 4821) | - |
 | POST | /auth/email-code | 인증코드 받기 `{email, purpose: signup/login}` → `{expires_in, resend_after, demo_code}` | - |
 | POST | /auth/signup | 회원가입 (비밀번호 없음, `code` 필수. 캐릭터·개인정보 동의 필수, 연차 선택: `""`이면 선택 안 함) | - |
 | POST | /auth/login | `{email, code}`로 로그인 → access_token 발급 | - |
@@ -42,7 +42,7 @@ API 문서: http://localhost:8000/docs
 
 토큰은 요청 헤더에 `Authorization: Bearer <access_token>` 으로 보냅니다.
 
-모든 시각(`created_at` 등)은 UTC이며 `+00:00`이 붙어서 나갑니다. FE는 `new Date(값)`으로 그대로 읽으면 됩니다.
+모든 시각(`created_at` 등)은 UTC이며 끝에 `Z`가 붙어서 나갑니다 (예: `2026-11-17T08:30:00Z`). FE는 `new Date(값)`으로 그대로 읽으면 됩니다.
 
 ## 서비스 API (모두 토큰 필요)
 
@@ -51,6 +51,7 @@ API 문서: http://localhost:8000/docs
 | GET | /islands | 내 직무섬 + 통합섬, 7일 고민 수, 새 댓글 여부 |
 | GET | /islands/{id}/neighbors | 지도에 띄울 이웃 캐릭터 + 최근 고민 |
 | GET | /islands/{id}/posts | 최근 고민 목록 (`comfort_type`, `q`, `limit`, `before_id`) |
+| PATCH | /users/me | 프로필 수정 (`character`, `nickname`). 캐릭터만 바꾸면 닉네임 자동 재생성 |
 | GET | /users/{id}/profile?island_id= | 간단 프로필 |
 | GET | /users/{id}/posts?island_id= | 이웃 한 명의 공개 고민 |
 | GET | /users/me/posts | 내 고민 (나만 보기 포함, `visibility` 필터) |

@@ -9,7 +9,7 @@ class SignupRequest(BaseModel):
     job: str
     years: str | None = None  
     character: str  
-    nickname: str | None = Field(default=None, max_length=30)
+    nickname: str | None = Field(default=None, max_length=30, description="비우면 서버가 자동 생성. 예) 포근한 호랑이 4821")
     agree_privacy: bool 
 
     @field_validator("job")
@@ -41,6 +41,19 @@ class SignupRequest(BaseModel):
     def must_agree(cls, v: bool) -> bool:
         if not v:
             raise ValueError("개인정보 이용 안내에 동의해야 가입할 수 있습니다")
+        return v
+
+
+class ProfileUpdate(BaseModel):
+    """프로필 수정: 보낸 필드만 바꾼다. 캐릭터만 바꾸면 그 동물로 닉네임을 새로 만들어 준다."""
+    character: str | None = None
+    nickname: str | None = Field(default=None, max_length=30, description="GET /auth/nickname으로 추천받은 값")
+
+    @field_validator("character")
+    @classmethod
+    def character_must_exist(cls, v: str | None) -> str | None:
+        if v is not None and v not in CHARACTERS:
+            raise ValueError(f"캐릭터는 {list(CHARACTERS)} 중 하나여야 합니다")
         return v
 
 
