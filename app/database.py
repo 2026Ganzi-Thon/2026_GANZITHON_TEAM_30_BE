@@ -1,12 +1,15 @@
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
-from app.config import DATABASE_URL
+from app.config import DATABASE_URL, IS_SQLITE
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+if IS_SQLITE:
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=1800)
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+TIMESTAMP = "TIMESTAMP" if IS_SQLITE else "TIMESTAMP WITH TIME ZONE"
 
-if DATABASE_URL.startswith("sqlite"):
+if IS_SQLITE:
     @event.listens_for(engine, "connect")
     def _enable_sqlite_fk(dbapi_conn, _):
         dbapi_conn.execute("PRAGMA foreign_keys=ON")
@@ -29,7 +32,25 @@ def upgrade_schema() -> None:
         if "comments" in tables:
             comment_cols = {c["name"] for c in inspect(engine).get_columns("comments")}
             if "deleted_at" not in comment_cols:  # 댓글 삭제 시 "삭제된 댓글입니다" 표시용
-                conn.execute(text("ALTER TABLE comments ADD COLUMN deleted_at TIMESTAMP"))
+                conn.execute(text(f"ALTER TABLE comments ADD COLUMN deleted_at {TIMESTAMP}"))
+            if "parent_id" not in comment_cols:
+                conn.execute(text("ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE"))
+            if "hidden_at" not in comment_cols:
+                conn.execute(text(f"ALTER TABLE comments ADD COLUMN hidden_at {TIMESTAMP}"))
+            if "thanked_at" not in comment_cols:
+                conn.execute(text(f"ALTER TABLE comments ADD COLUMN thanked_at {TIMESTAMP}"))
+        if "users" in tables:
+            user_cols = {c["name"] for c in inspect(engine).get_columns("users")}
+            if "accept_invites" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN accept_invites BOOLEAN NOT NULL DEFAULT TRUE"))
+        if "reports" in tables:
+            report_cols = {c["name"] for c in inspect(engine).get_columns("reports")}
+            if "resolved_at" not in report_cols:
+                conn.execute(text(f"ALTER TABLE reports ADD COLUMN resolved_at {TIMESTAMP}"))
+        if "moderation_cases" in tables:
+            case_cols = {c["name"] for c in inspect(engine).get_columns("moderation_cases")}
+            if "restored_hash" not in case_cols:
+                conn.execute(text("ALTER TABLE moderation_cases ADD COLUMN restored_hash VARCHAR(64)"))
 
 
 def get_db():

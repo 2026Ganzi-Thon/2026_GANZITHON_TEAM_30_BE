@@ -18,6 +18,8 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import Post, User
 from app.queries import get_accessible_island
+from app.ratelimit import limit_user
+from app.schemas import CrisisSupport
 
 router = APIRouter(prefix="/posts", tags=["posts (write)"])
 
@@ -75,17 +77,6 @@ class PostUpdate(BaseModel):
     _content = field_validator("content")(lambda v: _strip_required(v, "내용"))
     _check_topic = field_validator("topic")(_topic)
     _check_comfort = field_validator("comfort_type")(_comfort)
-
-
-class CrisisResource(BaseModel):
-    name: str
-    phone: str
-    hours: str
-
-
-class CrisisSupport(BaseModel):
-    message: str
-    resources: list[CrisisResource]
 
 
 class PostWriteOut(BaseModel):
@@ -149,7 +140,7 @@ class PostCheckOut(BaseModel):
     crisis: bool  # 위기 신호 (막지 않고 게시 후 상담 안내)
 
 
-@router.post("/check", response_model=PostCheckOut)
+@router.post("/check", response_model=PostCheckOut, dependencies=[limit_user("post-check", 30, 600)])
 def check_post(body: PostCheckIn, me: User = Depends(get_current_user)):
     """게시하지 않고 검사만 한다. FE의 '게시 전 AI 점검' 화면에서 결과를 미리 보여 줄 때 쓴다.
     실제 게시(POST/PATCH)에서도 같은 검사를 다시 하므로, 이 결과를 건너뛰어도 걸러진다."""
@@ -163,7 +154,10 @@ def check_post(body: PostCheckIn, me: User = Depends(get_current_user)):
     )
 
 
-@router.post("", response_model=PostWriteOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=PostWriteOut, status_code=status.HTTP_201_CREATED,
+    dependencies=[limit_user("post-write", 10, 600)],
+)
 def create_post(
     body: PostCreate,
     background: BackgroundTasks,
@@ -195,7 +189,7 @@ def create_post(
     return _out(post, result.crisis)
 
 
-@router.patch("/{post_id}", response_model=PostWriteOut)
+@router.patch("/{post_id}", response_model=PostWriteOut, dependencies=[limit_user("post-write", 10, 600)])
 def update_post(
     post_id: int,
     body: PostUpdate,
@@ -221,7 +215,8 @@ def update_post(
         changes["show_years"] = changes["show_years"] and me.years is not None
     for key, value in changes.items():
         setattr(post, key, value)
-    post.status = "published"
+    if post.status != "hidden":
+        post.status = "published"
     db.commit()
     db.refresh(post)
 

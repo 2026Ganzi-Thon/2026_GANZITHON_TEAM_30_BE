@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, TypeDecorator, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, TypeDecorator, UniqueConstraint, true
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -38,7 +38,8 @@ class User(Base):
     years: Mapped[str | None] = mapped_column(String(20), nullable=True) 
     nickname: Mapped[str] = mapped_column(String(50), unique=True) 
     character: Mapped[str] = mapped_column(String(30)) 
-    privacy_agreed_at: Mapped[datetime] = mapped_column(UTCDateTime()) 
+    privacy_agreed_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    accept_invites: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
 
@@ -84,11 +85,16 @@ class Comment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # AI 댓글은 None
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, default=None, index=True
+    )
     content: Mapped[str] = mapped_column(Text)
     is_ai: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     # 삭제해도 행은 남겨서 그 자리에 "삭제된 댓글입니다"를 보여 준다 (대댓글 흐름이 끊기지 않게)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+    hidden_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+    thanked_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
 
 
 class Reaction(Base):
@@ -125,6 +131,26 @@ class Report(Base):
     target_id: Mapped[int] = mapped_column()
     reason: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+
+
+class ModerationCase(Base):
+    __tablename__ = "moderation_cases"
+    __table_args__ = (UniqueConstraint("target_type", "target_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    target_type: Mapped[str] = mapped_column(String(10))
+    target_id: Mapped[int] = mapped_column(index=True)
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    state: Mapped[str] = mapped_column(String(10), default="review")
+    report_score: Mapped[float] = mapped_column(default=0.0)
+    ai_flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    restored_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    appeal_reason: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    appealed_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+    resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
 
 class Block(Base):

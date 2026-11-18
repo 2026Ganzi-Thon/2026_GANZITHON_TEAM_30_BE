@@ -3,15 +3,16 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.client import AIUnavailable
 from app.ai.search import search_similar_scored
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Comment, Post, User
-from app.queries import blocked_user_ids, get_accessible_island
+from app.models import Post, User
+from app.queries import blocked_user_ids, get_accessible_island, visible_comment_counts
+from app.ratelimit import limit_ip, limit_user
 from app.routers.islands import to_author
 from app.schemas import AuthorOut
 
@@ -57,7 +58,7 @@ class SearchOut(BaseModel):
     fallback: SearchFallback | None
 
 
-@router.get("/search", response_model=SearchOut)
+@router.get("/search", response_model=SearchOut, dependencies=[limit_user("search", 30, 60)])
 def search_posts(
     q: str = Query(..., min_length=2, max_length=200, description="검색 문장 (예: 팀장이랑 자꾸 부딪혀요)"),
     island_id: int = Query(...),
@@ -83,11 +84,7 @@ def search_posts(
     ids = [pid for pid, _ in scored]
     posts = {p.id: p for p in db.scalars(select(Post).where(Post.id.in_(ids)))}
     authors = {u.id: u for u in db.scalars(select(User).where(User.id.in_({p.user_id for p in posts.values()})))}
-    counts = dict(db.execute(
-        select(Comment.post_id, func.count())
-        .where(Comment.post_id.in_(ids), Comment.deleted_at.is_(None))  # 삭제된 댓글은 빼고 센다 (목록과 같게)
-        .group_by(Comment.post_id)
-    ).all())
+    counts = visible_comment_counts(db, ids)
 
     items = [
         SearchItem(
@@ -102,7 +99,7 @@ def search_posts(
     return SearchOut(items=items, user_ids=user_ids, empty=False, fallback=None)
 
 
-@router.get("/search/keywords")
+@router.get("/search/keywords", dependencies=[limit_ip("keywords", 60, 60)])
 def search_keywords():
     """검색 화면의 자주 찾는 키워드 (고정 목록, 로그인 불필요)."""
     return {"keywords": KEYWORDS}

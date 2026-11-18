@@ -1,5 +1,13 @@
 # Render Blueprint: 대시보드 > New > Blueprint 에서 이 레포를 고르면 아래 설정으로 서버가 만들어진다.
 # sync: false 값(UPSTAGE_API_KEY)은 만들 때 대시보드에서 직접 입력한다. 키를 이 파일에 적지 말 것.
+databases:
+  - name: ondo-db
+    plan: free
+    region: singapore
+    databaseName: ondo
+    user: ondo
+    ipAllowList: []
+
 services:
   - type: web
     name: ondo-api
@@ -15,12 +23,22 @@ services:
         value: 3.13.5
       - key: ENV
         value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ondo-db
+          property: connectionString
       - key: SECRET_KEY
         generateValue: true # Render가 무작위 값을 만들어 줌
       - key: UPSTAGE_API_KEY
         sync: false
       - key: CORS_ORIGINS
-        value: "*" # FE 배포 주소가 나오면 그 주소로 바꿀 것 (예: https://ondo-fe.onrender.com)
+        sync: false # FE 배포 주소를 대시보드에서 입력 (예: https://ondo-fe.onrender.com). 쉼표로 여러 개
+      - key: TRUST_PROXY
+        value: "1"
+      - key: RATE_LIMIT_ENABLED
+        value: "1"
+      - key: ADMIN_EMAILS
+        sync: false
       - key: EMAIL_MODE
         value: demo
       - key: ACCESS_TOKEN_EXPIRE_MINUTES

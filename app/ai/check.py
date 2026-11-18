@@ -125,6 +125,14 @@ def has_crisis_signal(text: str) -> bool:
     return bool(_CRISIS.search(text))
 
 
+def passes_rules(text: str) -> bool:
+    personal, offensive, _ = _rule_check(text)
+    return not personal and not offensive
+
+
+MASK_TOKENS = ("[주민번호]", "[전화번호]", "[이메일]")
+
+
 def _rule_check(text: str) -> tuple[list[Issue], list[Issue], bool]:
     personal = (
         _find(_RRN, text, "PERSONAL_INFO", GUIDE["rrn"])
@@ -142,7 +150,10 @@ def _llm_check(text: str, kind: Kind) -> dict | None:
     if settings.provider() == "local":
         return None
     try:
-        return client.chat_json(prompts.check_prompt(kind), text, timeout=settings.CHECK_TIMEOUT_SECONDS)
+        return client.chat_json(
+            prompts.check_prompt(kind), prompts.wrap_user_text(mask_personal_info(text)),
+            timeout=settings.CHECK_TIMEOUT_SECONDS,
+        )
     except client.AIUnavailable as e:
         log.warning("check_text LLM 실패, 규칙 검사만 사용: %s", e)
         return None
@@ -155,7 +166,10 @@ def _section(data: dict, key: str) -> dict:
 
 def _llm_issues(section: dict, issue_type: str, text: str, fallback_guide: str) -> list[Issue]:
     guide = (section.get("suggestion") or "").strip() or fallback_guide
-    spans = [s for s in section.get("spans") or [] if isinstance(s, str) and s.strip()]
+    spans = [
+        s for s in section.get("spans") or []
+        if isinstance(s, str) and s.strip() and not any(token in s for token in MASK_TOKENS)
+    ]
     if not spans:
         return [Issue(issue_type, None, None, None, guide)]
     issues = []

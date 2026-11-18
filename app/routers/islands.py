@@ -1,17 +1,20 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from app.config import COMFORT_TYPES, LEFT_CHARACTER, LEFT_NICKNAME
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Comment, Island, Post, User
+from app.models import Island, Post, User
 from app.queries import (
     blocked_user_ids,
     get_accessible_island,
     has_unread_comment,
     island_post_count,
     keyword_filter,
+    neighbor_comment_exists,
+    posts_with_neighbor_comment,
     public_posts,
+    visible_comment_counts,
 )
 from app.schemas import AuthorOut, IslandOut, LatestPostOut, NeighborOut, PostListOut, PostSummary
 
@@ -93,6 +96,7 @@ def list_island_posts(
     q: str | None = Query(None, min_length=1, max_length=50, description="제목·본문 검색어"),
     limit: int = Query(20, ge=1, le=50),
     before_id: int | None = Query(None, description="더 보기: 이전 응답의 next_before_id"),
+    waiting: bool = Query(False, description="true면 아직 이웃 댓글이 없는 고민만"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -102,9 +106,13 @@ def list_island_posts(
 
     conditions = [Post.island_id == island.id, Post.user_id.not_in(hidden)]
     if comfort_type:
+        if any(c not in COMFORT_TYPES for c in comfort_type):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"위로 방식은 {list(COMFORT_TYPES)} 중 하나여야 합니다")
         conditions.append(Post.comfort_type.in_(comfort_type))
     if q:
         conditions.append(keyword_filter(q))
+    if waiting:
+        conditions.append(~neighbor_comment_exists())
 
     stmt = public_posts().where(*conditions)
     if before_id is not None:
@@ -115,9 +123,8 @@ def list_island_posts(
     posts = posts[:limit]
 
     post_ids = [p.id for p in posts]
-    counts = dict(db.execute(
-        select(Comment.post_id, func.count()).where(Comment.deleted_at.is_(None), Comment.post_id.in_(post_ids)).group_by(Comment.post_id)
-    ).all()) if post_ids else {}
+    counts = visible_comment_counts(db, post_ids)
+    answered = posts_with_neighbor_comment(db, post_ids)
     authors = {u.id: u for u in db.scalars(select(User).where(User.id.in_({p.user_id for p in posts})))}
 
     user_ids = db.scalars(public_posts().with_only_columns(Post.user_id).where(*conditions).distinct()).all()
@@ -133,6 +140,7 @@ def list_island_posts(
                 created_at=p.created_at,
                 comment_count=counts.get(p.id, 0),
                 author=to_author(authors[p.user_id], island),
+                waiting=p.id not in answered,
             )
             for p in posts
         ],

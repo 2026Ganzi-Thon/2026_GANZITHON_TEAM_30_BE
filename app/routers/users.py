@@ -5,10 +5,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Comment, Island, Notification, Post, User
-from app.queries import blocked_user_ids, get_accessible_island, public_posts
+from app.queries import blocked_user_ids, get_accessible_island, public_posts, visible_comment_counts
 from app.routers.islands import to_author
 from app.nickname import generate_unique_nickname, is_valid_nickname, nickname_taken
-from app.schemas import AuthorOut, MyCommentOut, MyPostOut, PostSummary, ProfileUpdate, UserResponse
+from app.schemas import AuthorOut, MyCommentOut, MyPostOut, MySummaryOut, PostSummary, ProfileUpdate, UserResponse
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -27,7 +27,7 @@ def update_my_profile(body: ProfileUpdate, me: User = Depends(get_current_user),
     if body.nickname:
         if not is_valid_nickname(body.nickname, character):
             raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "닉네임은 추천받은 형식(형용사 + 선택한 동물 + 4자리 숫자)이어야 합니다",
             )
         if body.nickname != me.nickname and nickname_taken(db, body.nickname):
@@ -37,6 +37,8 @@ def update_my_profile(body: ProfileUpdate, me: User = Depends(get_current_user),
         # 캐릭터만 바꾸면 예전 닉네임의 동물과 어긋나므로 새 동물로 다시 만든다
         me.nickname = generate_unique_nickname(db, character)
     me.character = character
+    if body.accept_invites is not None:
+        me.accept_invites = body.accept_invites
     try:
         db.commit()
     except IntegrityError:  # 동시에 같은 닉네임을 고른 경우
@@ -44,6 +46,24 @@ def update_my_profile(body: ProfileUpdate, me: User = Depends(get_current_user),
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 닉네임입니다. 다시 뽑아 주세요")
     db.refresh(me)
     return me
+
+
+@router.get("/me/summary", response_model=MySummaryOut)
+def get_my_summary(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    def count(stmt) -> int:
+        return db.scalar(stmt) or 0
+
+    mine = (Comment.user_id == me.id, Comment.deleted_at.is_(None), Comment.hidden_at.is_(None))
+    return MySummaryOut(
+        post_count=count(select(func.count()).select_from(Post).where(Post.user_id == me.id)),
+        comment_count=count(select(func.count()).select_from(Comment).where(*mine)),
+        thanks_received=count(select(func.count()).select_from(Comment).where(*mine, Comment.thanked_at.is_not(None))),
+        posts_helped=count(
+            select(func.count(func.distinct(Comment.post_id)))
+            .join(Post, Post.id == Comment.post_id)
+            .where(*mine, Post.user_id != me.id)
+        ),
+    )
 
 
 @router.get("/me/posts", response_model=list[MyPostOut])
@@ -58,9 +78,7 @@ def get_my_posts(
     posts = db.scalars(stmt.order_by(Post.id.desc())).all()
 
     post_ids = [p.id for p in posts]
-    counts = dict(db.execute(
-        select(Comment.post_id, func.count()).where(Comment.deleted_at.is_(None), Comment.post_id.in_(post_ids)).group_by(Comment.post_id)
-    ).all()) if post_ids else {}
+    counts = visible_comment_counts(db, post_ids)
     islands = {i.id: i for i in db.scalars(select(Island).where(Island.id.in_({p.island_id for p in posts})))}
     unread = set(db.scalars(
         select(Notification.post_id).where(
@@ -128,9 +146,7 @@ def get_user_posts(
     posts = db.scalars(
         public_posts().where(Post.user_id == target.id, Post.island_id == island.id).order_by(Post.id.desc())
     ).all()
-    counts = dict(db.execute(
-        select(Comment.post_id, func.count()).where(Comment.deleted_at.is_(None), Comment.post_id.in_([p.id for p in posts])).group_by(Comment.post_id)
-    ).all()) if posts else {}
+    counts = visible_comment_counts(db, [p.id for p in posts])
     author = to_author(target, island)
     return [
         PostSummary(

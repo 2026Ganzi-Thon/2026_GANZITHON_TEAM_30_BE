@@ -22,6 +22,7 @@ from app.schemas import (
     TokenResponse,
     UserResponse,
 )
+from app.ratelimit import limit_ip
 from app.security import create_access_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -38,14 +39,14 @@ def signup_options():
     }
 
 
-@router.get("/nickname", response_model=NicknameSuggestion)
+@router.get("/nickname", response_model=NicknameSuggestion, dependencies=[limit_ip("nickname", 60, 60)])
 def suggest_nickname(character: str, db: Session = Depends(get_db)):
     if character not in CHARACTERS:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"캐릭터는 {list(CHARACTERS)} 중 하나여야 합니다")
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"캐릭터는 {list(CHARACTERS)} 중 하나여야 합니다")
     return NicknameSuggestion(nickname=generate_unique_nickname(db, character), character=character)
 
 
-@router.post("/email-code", response_model=EmailCodeOut)
+@router.post("/email-code", response_model=EmailCodeOut, dependencies=[limit_ip("email-code", 5, 600)])
 def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
     """가입·로그인 전에 인증코드를 받는다. demo 모드면 메일 대신 응답에 코드를 담는다."""
     email = body.email.lower()
@@ -70,7 +71,7 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/email-code/verify", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/email-code/verify", status_code=status.HTTP_204_NO_CONTENT, dependencies=[limit_ip("auth", 20, 600)])
 def check_email_code(body: EmailCodeVerify, db: Session = Depends(get_db)):
     """코드가 맞는지만 확인한다 (소모하지 않음). FE가 인증 단계에서 바로 '인증 완료'를 보여 줄 때 쓴다.
     틀리면 남은 횟수가 줄어든다. 실제 소모는 가입·로그인이 성공할 때."""
@@ -78,7 +79,10 @@ def check_email_code(body: EmailCodeVerify, db: Session = Depends(get_db)):
     db.commit()  # 틀린 횟수(attempts) 저장
 
 
-@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED,
+    dependencies=[limit_ip("auth", 20, 600)],
+)
 def signup(body: SignupRequest, db: Session = Depends(get_db)):
     email = body.email.lower() 
 
@@ -87,7 +91,7 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
 
     if body.nickname:
         if not is_valid_nickname(body.nickname, body.character):
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "닉네임은 추천받은 형식(형용사 + 선택한 동물 + 4자리 숫자)이어야 합니다")
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "닉네임은 추천받은 형식(형용사 + 선택한 동물 + 4자리 숫자)이어야 합니다")
         if nickname_taken(db, body.nickname):
             raise HTTPException(status.HTTP_409_CONFLICT, "이미 사용 중인 닉네임입니다. 다시 뽑아 주세요")
         nickname = body.nickname
@@ -117,7 +121,7 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     return SignupResponse(**profile, access_token=create_access_token(user.id))
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[limit_ip("auth", 20, 600)])
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """회사 이메일 + 그 메일로 받은 인증코드로 로그인한다 (비밀번호 없음)."""
     user = db.scalar(select(User).where(User.email == body.email.lower()))

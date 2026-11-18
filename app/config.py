@@ -5,15 +5,38 @@ from dotenv import load_dotenv
 load_dotenv()  # 프로젝트 루트의 .env를 환경변수로 읽음 (이미 설정된 값은 덮어쓰지 않음)
 
 ENV = os.getenv("ENV", "dev")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ganzithon.db")
+POSTGRES_PREFIXES = ("postgres://", "postgresql://")
+
+
+def normalize_database_url(url: str) -> str:
+    for prefix in POSTGRES_PREFIXES:
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
+DATABASE_URL = normalize_database_url(os.getenv("DATABASE_URL") or "sqlite:///./ganzithon.db")
+IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
 _DEV_SECRET = "dev-only-secret-key-change-me-in-production-32b+"
 SECRET_KEY = os.getenv("SECRET_KEY") or _DEV_SECRET  # 빈 값도 "설정 안 함"으로 본다
 if ENV == "production" and SECRET_KEY == _DEV_SECRET:
     raise RuntimeError("배포 환경에서는 SECRET_KEY 환경변수를 반드시 설정해야 합니다")
 
-# 쉼표로 구분: "https://ondo.vercel.app,http://localhost:5173"
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+DEV_ORIGINS = "http://localhost:5500,http://127.0.0.1:5500,http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
+CORS_ORIGINS = [o.strip() for o in (os.getenv("CORS_ORIGINS") or DEV_ORIGINS).split(",") if o.strip()]
+CORS_ALLOWS_ANY = "*" in CORS_ORIGINS
+TRUST_PROXY = os.getenv("TRUST_PROXY", "0") == "1"
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "1") != "0"
+MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", 64 * 1024))
+REPORT_HIDE_THRESHOLD = float(os.getenv("REPORT_HIDE_THRESHOLD", 3))
+REPORT_FORCE_HIDE_THRESHOLD = float(os.getenv("REPORT_FORCE_HIDE_THRESHOLD", 6))
+REPORT_TRUSTED_ACCOUNT_HOURS = float(os.getenv("REPORT_TRUSTED_ACCOUNT_HOURS", 24))
+ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
+AI_FOLLOWUP_MAX = int(os.getenv("AI_FOLLOWUP_MAX", 10))
+AI_DAILY_REPLY_LIMIT = int(os.getenv("AI_DAILY_REPLY_LIMIT", 30))
+INVITE_MAX_PER_POST = int(os.getenv("INVITE_MAX_PER_POST", 3))
+INVITE_DAILY_PER_USER = int(os.getenv("INVITE_DAILY_PER_USER", 3))
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24))  # 1일
 
@@ -62,6 +85,7 @@ CHARACTERS = {
 
 LEFT_NICKNAME = '떠난 이용자'
 DELETED_COMMENT = '삭제된 댓글입니다'
+HIDDEN_COMMENT = '신고가 쌓여 가려진 댓글입니다'
 LEFT_CHARACTER = 'left'
 
 # ---------- 이메일 인증코드 ----------

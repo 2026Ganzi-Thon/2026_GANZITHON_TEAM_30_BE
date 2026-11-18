@@ -4,7 +4,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import Select, exists, func, or_, select, delete
 from sqlalchemy.orm import Session
 from app.config import ISLAND_COUNT_DAYS, JOBS
-from app.models import Block, Comment, Island, Notification, Post, Reaction, RevokedToken, User
+from app.models import Block, Comment, EmailCode, Island, Notification, Post, Reaction, RevokedToken, User
+
+COMMENT_NOTIFICATION_TYPES = ("comment", "reply")
 
 
 # ---------- 섬 ----------
@@ -57,7 +59,7 @@ def has_unread_comment(db: Session, user_id: int, island_id: int) -> bool:
     stmt = select(
         exists().where(
             Notification.user_id == user_id,
-            Notification.type == "comment",
+            Notification.type.in_(COMMENT_NOTIFICATION_TYPES),
             Notification.is_read.is_(False),
             Notification.post_id == Post.id,
             Post.island_id == island_id,
@@ -76,21 +78,60 @@ def create_notification(db: Session, *, user_id: int, type: str, post_id: int, a
     db.add(Notification(user_id=user_id, type=type, post_id=post_id, actor_id=actor_id))
 
 
-def add_ai_comment(db: Session, post: Post, content: str) -> Comment:
+def add_ai_comment(db: Session, post: Post, content: str, parent_id: int | None = None) -> Comment:
     """B가 AI 첫 댓글을 저장할 때 쓰는 함수. 댓글과 글쓴이 알림(actor_id=None)을 함께 저장한다."""
-    comment = Comment(post_id=post.id, user_id=None, content=content, is_ai=True)
+    comment = Comment(post_id=post.id, user_id=None, content=content, is_ai=True, parent_id=parent_id)
     db.add(comment)
-    create_notification(db, user_id=post.user_id, type="comment", post_id=post.id, actor_id=None)
+    notification_type = "reply" if parent_id is not None else "comment"
+    create_notification(db, user_id=post.user_id, type=notification_type, post_id=post.id, actor_id=None)
     db.commit()
     db.refresh(comment)
     return comment
 
 
+def visible_comment_counts(db: Session, post_ids: list[int]) -> dict[int, int]:
+    if not post_ids:
+        return {}
+    return dict(db.execute(
+        select(Comment.post_id, func.count())
+        .where(Comment.post_id.in_(post_ids), Comment.deleted_at.is_(None), Comment.hidden_at.is_(None))
+        .group_by(Comment.post_id)
+    ).all())
+
+
+def neighbor_comment_exists():
+    return exists().where(
+        Comment.post_id == Post.id,
+        Comment.is_ai.is_(False),
+        Comment.user_id != Post.user_id,
+        Comment.deleted_at.is_(None),
+        Comment.hidden_at.is_(None),
+    )
+
+
+def posts_with_neighbor_comment(db: Session, post_ids: list[int]) -> set[int]:
+    if not post_ids:
+        return set()
+    return set(db.scalars(select(Post.id).where(Post.id.in_(post_ids), neighbor_comment_exists())))
+
+
 # ---------- 검색 ----------
 
+def escape_like(q: str) -> str:
+    return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def keyword_filter(q: str):
-    pattern = f"%{q}%"
-    return or_(Post.title.like(pattern), Post.content.like(pattern))
+    pattern = f"%{escape_like(q)}%"
+    return or_(Post.title.like(pattern, escape="\\"), Post.content.like(pattern, escape="\\"))
+
+
+
+def purge_expired(db: Session) -> None:
+    now = datetime.now(timezone.utc)
+    db.execute(delete(RevokedToken).where(RevokedToken.expires_at < now))
+    db.execute(delete(EmailCode).where(EmailCode.expires_at < now))
+    db.commit()
 
 # ---------- 탈퇴 ----------
 

@@ -1,6 +1,6 @@
 # 2026_GANZITHON_TEAM_30_BE
 
-FastAPI + SQLAlchemy(SQLite) 백엔드
+FastAPI + SQLAlchemy 백엔드 (로컬 SQLite, 배포 PostgreSQL)
 
 ## 실행
 
@@ -16,6 +16,8 @@ uvicorn app.main:app --reload
 ```
 
 API 문서: http://localhost:8000/docs
+
+시연 데이터를 넣으면 섬마다 고민을 가진 이웃 캐릭터가 채워집니다. 발표 직무섬 16명, 나머지 직무섬 8명·7명, 통합섬 14명이고, 캐릭터 13종이 모두 등장합니다. 일부 글은 "답을 기다리는 고민"으로 남기고, AI 이어 답글·고마워요·초대 알림 예시도 들어 있습니다.
 
 ## 인증 API
 
@@ -51,8 +53,9 @@ API 문서: http://localhost:8000/docs
 |---|---|---|
 | GET | /islands | 내 직무섬 + 통합섬, 7일 고민 수, 새 댓글 여부 |
 | GET | /islands/{id}/neighbors | 지도에 띄울 이웃 캐릭터 + 최근 고민 |
-| GET | /islands/{id}/posts | 최근 고민 목록 (`comfort_type`, `q`, `limit`, `before_id`) |
-| PATCH | /users/me | 프로필 수정 (`character`, `nickname`). 캐릭터만 바꾸면 닉네임 자동 재생성 |
+| GET | /islands/{id}/posts | 최근 고민 목록 (`comfort_type`, `q`, `limit`, `before_id`, `waiting=true`면 이웃 댓글이 없는 글만) |
+| PATCH | /users/me | 프로필 수정 (`character`, `nickname`, `accept_invites`). 캐릭터만 바꾸면 닉네임 자동 재생성 |
+| GET | /users/me/summary | 내 활동 요약 `{post_count, comment_count, thanks_received, posts_helped}` |
 | GET | /users/{id}/profile?island_id= | 간단 프로필 |
 | GET | /users/{id}/posts?island_id= | 이웃 한 명의 공개 고민 |
 | GET | /users/me/posts | 내 고민 (나만 보기 포함, `visibility` 필터) |
@@ -64,15 +67,30 @@ API 문서: http://localhost:8000/docs
 | GET | /search?q=&island_id= | 비슷한 고민 검색 (임베딩 유사도 순, 결과 없으면 `empty: true` + 추천 키워드) |
 | GET | /search/keywords | 자주 찾는 키워드 (토큰 불필요) |
 | GET | /posts/{id} | 고민 상세 + 댓글 + 공감 (내 글이면 알림 읽음 처리) |
-| POST | /posts/{id}/comments | 댓글 작성 (부적절하면 422 `{reason, suggestion}`) |
+| POST | /posts/{id}/comments | 댓글·답글 작성 `{content, parent_id?}` (부적절하면 422 `NEED_EDIT`, 위기 신호면 `crisis_support`). 글쓴이가 AI 댓글에 답글을 달면 AI가 이웃이 올 때까지 이어서 답글 (대화당 10번, 하루 30번, 이웃이 오면 한 번 이어 주고 멈춤, `ai_reply_pending`) |
+| POST | /posts/{id}/comments/{comment_id}/thanks | 글쓴이가 이웃 댓글에 고마워요 토글 → `{thanked}`. 이웃에게 `thanks` 알림 |
+| GET | /posts/{id}/similar | 이 글과 비슷하면서 이웃 답이 달린 글 최대 3개 (`similarity` 포함) |
 | DELETE | /posts/{id}/comments/{comment_id} | 내 댓글만 삭제 (남의 댓글은 403). 상세에는 `is_deleted: true`, "삭제된 댓글입니다"로 남음 |
 | POST | /posts/{id}/reactions | 공감 토글 |
 | GET | /notifications | 알림 목록 + 안 읽은 수 (`limit`, `before_id`) |
 | POST | /notifications/read | 읽음 처리 (`{"post_id": 1}` 또는 `{}`로 전체) |
-| POST | /reports | 신고 `{target_type: post/comment, target_id, reason}` |
+| POST | /reports | 신고 `{target_type: post/comment, target_id, reason}`. 3점이면 AI 재검사 후 가리거나 검토 대기, 6점이면 가림 (새 계정은 0.5점) |
+| POST | /reports/appeal | 가려진 내 글·댓글 이의 제기 `{target_type, target_id, reason}` (한 번만) |
+| GET | /admin/moderation?state=open | 운영진 전용: 신고 대기열 (이의 제기 먼저). `protected: true`면 운영진이 복구한 뒤 내용이 그대로인 글이라 자동으로 가려지지 않음 |
+| POST | /admin/moderation/{case_id} | 운영진 전용: `{action: hide/restore}` |
 | GET | /blocks | 내가 차단한 사람 |
 | POST | /blocks | 차단 `{user_id}` |
 | DELETE | /blocks/{user_id} | 차단 해제 |
+
+## 지표 API (발표용, 토큰 불필요)
+
+`GET /stats/impact` → 공개 고민 수, 첫 반응까지 걸린 시간(중앙값, 분), 이웃 반응 수, AI 대화 수, 고마워요 받은 댓글 수, 초대 수와 초대 후 이웃 답이 달린 글 수, 신고 검토·복구 수
+
+## 보안 · 테스트
+
+- 위협별 대응과 확인 테스트: [SECURITY.md](SECURITY.md)
+- AI 사용과 검증 기록: [docs/AI_USAGE.md](docs/AI_USAGE.md)
+- `pip install -r requirements-dev.txt` 후 `pytest -q` (86개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
 
 ## 환경변수
 
@@ -81,10 +99,20 @@ API 문서: http://localhost:8000/docs
 | 이름 | 기본값 |
 |---|---|
 | ENV | dev (배포 시 `production`: 이때 SECRET_KEY가 없으면 서버가 켜지지 않음) |
-| DATABASE_URL | sqlite:///./ganzithon.db |
+| DATABASE_URL | sqlite:///./ganzithon.db (배포는 Render Postgres 주소가 자동으로 들어감. `postgres://`·`postgresql://`는 psycopg 드라이버 주소로 자동 변환) |
 | SECRET_KEY | 개발용 값 (배포 시 반드시 변경) |
 | ACCESS_TOKEN_EXPIRE_MINUTES | 1440 (1일) |
-| CORS_ORIGINS | * (배포 시 프론트 주소, 쉼표로 여러 개) |
+| CORS_ORIGINS | 로컬 개발 주소(5500·5173·3000). 배포 시 프론트 주소를 쉼표로 |
+| TRUST_PROXY | 0 (Render처럼 프록시 뒤면 1: 요청 제한에 실제 사용자 IP 사용) |
+| RATE_LIMIT_ENABLED | 1 (요청 횟수 제한, 표는 SECURITY.md) |
+| REPORT_HIDE_THRESHOLD | 3 (이 점수면 AI 재검사, 문제 있으면 가리고 아니면 운영 검토) |
+| REPORT_FORCE_HIDE_THRESHOLD | 6 (이 점수면 바로 가림. 운영진이 복구한 글은 내용이 바뀌기 전까지 자동으로 가리지 않음) |
+| REPORT_TRUSTED_ACCOUNT_HOURS | 24 (가입 후 이 시간이 지나야 신고 1점, 그 전에는 0.5점) |
+| ADMIN_EMAILS | 없음 (운영진 이메일, 쉼표로 여러 개) |
+| AI_FOLLOWUP_MAX | 10 (대화 하나에 AI 이어 답글 최대 횟수) |
+| AI_DAILY_REPLY_LIMIT | 30 (작성자 한 명당 24시간 AI 이어 답글 수) |
+| INVITE_MAX_PER_POST | 3 (새 글마다 초대할 비슷한 고민 작성자 수) |
+| INVITE_DAILY_PER_USER | 3 (한 사람이 24시간 동안 받는 초대 수) |
 | UPSTAGE_API_KEY | 없음 (AI 기능용, 서버에만 설정) |
 | EMAIL_MODE | demo (`smtp`면 실제 메일 발송) |
 | SMTP_HOST / SMTP_PORT | smtp.gmail.com / 465 (587이면 STARTTLS) |
@@ -97,12 +125,14 @@ API 문서: http://localhost:8000/docs
 
 ## 배포 (Render)
 
-1. Render 대시보드 > New > Blueprint > 이 레포 선택 → `render.yaml` 설정으로 서버가 만들어집니다.
-2. `UPSTAGE_API_KEY`만 대시보드에서 직접 입력합니다. `SECRET_KEY`는 Render가 자동으로 만듭니다.
-3. 시작 명령은 `python deploy_start.py`입니다. DB에 시연 데이터가 없으면 `demo_seed.py` → `demo_seed_b.py`(임베딩)를 실행한 뒤 서버를 띄웁니다.
+1. Render 대시보드 > New > Blueprint > 이 레포 선택 → `render.yaml` 설정으로 무료 Postgres(`ondo-db`)와 서버가 함께 만들어지고, `DATABASE_URL`이 자동으로 연결됩니다. DB는 Render 내부 접속만 허용합니다(`ipAllowList: []`).
+2. `UPSTAGE_API_KEY`, `CORS_ORIGINS`, `ADMIN_EMAILS`는 대시보드에서 직접 입력합니다. `SECRET_KEY`는 Render가 자동으로 만듭니다.
+3. 시작 명령은 `python deploy_start.py`입니다. DB에 시연 데이터가 없을 때(처음 한 번)만 `demo_seed.py` → `demo_seed_b.py`(임베딩)를 실행하고 서버를 띄웁니다. 그 뒤로는 재배포해도 데이터가 그대로 남습니다.
 4. FE 배포 주소가 정해지면 `CORS_ORIGINS`를 그 주소로 바꿉니다.
 
-무료 플랜은 재시작·재배포 때 SQLite 파일이 초기화되고, 15분 동안 요청이 없으면 잠들었다가 첫 요청에 30초~1분이 걸립니다. 시연 직전에 `/health`를 한 번 열어 깨워 두세요.
+무료 서버는 15분 동안 요청이 없으면 잠들었다가 첫 요청에 30초~1분이 걸립니다(데이터는 Postgres에 남음). 시연 직전에 `/health`를 한 번 열어 깨워 두세요. 무료 Postgres는 만든 날부터 30일 뒤 만료되므로, 대회 일정보다 너무 일찍 만들지 마세요(요금·기간은 Render 대시보드에서 확인).
+
+시연 데이터를 처음 상태로 되돌리려면 Render Shell을 쓸 수 있는 플랜이면 `python demo_seed.py --job 개발 --reset && python demo_seed_b.py`를 실행하고, 아니면 대시보드에서 `ondo-db`를 지우고 Blueprint를 다시 동기화합니다(빈 DB로 켜지면 `deploy_start.py`가 다시 채움).
 
 ## AI 기능 (B, `app/ai/`)
 

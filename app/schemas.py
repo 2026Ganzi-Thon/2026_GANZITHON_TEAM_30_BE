@@ -48,6 +48,7 @@ class ProfileUpdate(BaseModel):
     """프로필 수정: 보낸 필드만 바꾼다. 캐릭터만 바꾸면 그 동물로 닉네임을 새로 만들어 준다."""
     character: str | None = None
     nickname: str | None = Field(default=None, max_length=30, description="GET /auth/nickname으로 추천받은 값")
+    accept_invites: bool | None = None
 
     @field_validator("character")
     @classmethod
@@ -128,6 +129,7 @@ class PostSummary(BaseModel):
     created_at: datetime
     comment_count: int
     author: AuthorOut
+    waiting: bool = False
 
 
 class PostListOut(BaseModel):
@@ -145,6 +147,7 @@ class UserResponse(BaseModel):
     years: str | None
     nickname: str
     character: str
+    accept_invites: bool = True
 
 
 class SignupResponse(UserResponse):
@@ -153,6 +156,8 @@ class SignupResponse(UserResponse):
 
 class CommentCreate(BaseModel):
     content: str = Field(min_length=1, max_length=COMMENT_MAX)
+    parent_id: int | None = Field(default=None, ge=1)
+
     @field_validator('content')
     @classmethod
     def not_blank( cls, v: str) -> str:
@@ -161,14 +166,33 @@ class CommentCreate(BaseModel):
             raise ValueError('댓글 내용을 입력해 주세요')
         return v
 
+class CrisisResource(BaseModel):
+    name: str
+    phone: str
+    hours: str
+
+
+class CrisisSupport(BaseModel):
+    message: str
+    resources: list[CrisisResource]
+
+
 class CommentOut(BaseModel):
     id: int
     content: str  # 삭제된 댓글이면 "삭제된 댓글입니다"
     is_ai: bool
     is_deleted: bool = False
+    is_hidden: bool = False
+    thanked: bool = False
+    parent_id: int | None = None
     author: AuthorOut | None  # AI 댓글·삭제된 댓글이면 None
     is_mine: bool
     created_at: datetime
+
+
+class CommentCreateOut(CommentOut):
+    crisis_support: CrisisSupport | None = None
+    ai_reply_pending: bool = False
 
 class PostDetailOut(BaseModel):
     id: int
@@ -187,6 +211,21 @@ class PostDetailOut(BaseModel):
     reaction_count: int
     reacted_by_me: bool
     comments: list[CommentOut]
+
+class ThanksOut(BaseModel):
+    thanked: bool
+
+
+class SimilarPostOut(PostSummary):
+    similarity: float
+
+
+class MySummaryOut(BaseModel):
+    post_count: int
+    comment_count: int
+    thanks_received: int
+    posts_helped: int
+
 
 class ReactionOut(BaseModel):
     reacted: bool
@@ -254,3 +293,17 @@ class BlockedUserOut(BaseModel):
     nickname: str
     character: str
     blocked_at: datetime
+
+
+class AppealCreate(BaseModel):
+    target_type: Literal["post", "comment"]
+    target_id: int
+    reason: str = Field(min_length=1, max_length=200)
+
+    @field_validator("reason")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("이의 제기 사유를 입력해 주세요")
+        return v

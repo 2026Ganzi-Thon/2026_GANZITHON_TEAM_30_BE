@@ -4,7 +4,7 @@ import os
 import tempfile
 
 _db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-os.environ["DATABASE_URL"] = f"sqlite:///{_db.name}"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_db.name}")
 os.environ["AI_PROVIDER"] = "local"
 os.environ["EMAIL_MODE"] = "demo"  # 인증코드를 응답(demo_code)으로 받는다
 
