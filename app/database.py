@@ -5,7 +5,14 @@ from app.config import DATABASE_URL, IS_SQLITE
 if IS_SQLITE:
     engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 else:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=1800)
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"prepare_threshold": None},
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=5,
+        pool_recycle=1800,
+    )
 
 TIMESTAMP = "TIMESTAMP" if IS_SQLITE else "TIMESTAMP WITH TIME ZONE"
 

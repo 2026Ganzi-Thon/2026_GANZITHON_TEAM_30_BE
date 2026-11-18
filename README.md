@@ -90,7 +90,7 @@ API 문서: http://localhost:8000/docs
 
 - 위협별 대응과 확인 테스트: [SECURITY.md](SECURITY.md)
 - AI 사용과 검증 기록: [docs/AI_USAGE.md](docs/AI_USAGE.md)
-- `pip install -r requirements-dev.txt` 후 `pytest -q` (86개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
+- `pip install -r requirements-dev.txt` 후 `pytest -q` (87개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
 
 ## 환경변수
 
@@ -99,7 +99,7 @@ API 문서: http://localhost:8000/docs
 | 이름 | 기본값 |
 |---|---|
 | ENV | dev (배포 시 `production`: 이때 SECRET_KEY가 없으면 서버가 켜지지 않음) |
-| DATABASE_URL | sqlite:///./ganzithon.db (배포는 Render Postgres 주소가 자동으로 들어감. `postgres://`·`postgresql://`는 psycopg 드라이버 주소로 자동 변환) |
+| DATABASE_URL | sqlite:///./ganzithon.db (배포는 Supabase의 Session pooler 주소를 Render 대시보드에 입력. `postgres://`·`postgresql://`는 psycopg 드라이버 주소로 자동 변환되고, Supabase 주소는 SSL이 자동으로 켜짐) |
 | SECRET_KEY | 개발용 값 (배포 시 반드시 변경) |
 | ACCESS_TOKEN_EXPIRE_MINUTES | 1440 (1일) |
 | CORS_ORIGINS | 로컬 개발 주소(5500·5173·3000). 배포 시 프론트 주소를 쉼표로 |
@@ -125,14 +125,15 @@ API 문서: http://localhost:8000/docs
 
 ## 배포 (Render)
 
-1. Render 대시보드 > New > Blueprint > 이 레포 선택 → `render.yaml` 설정으로 무료 Postgres(`ondo-db`)와 서버가 함께 만들어지고, `DATABASE_URL`이 자동으로 연결됩니다. DB는 Render 내부 접속만 허용합니다(`ipAllowList: []`).
-2. `UPSTAGE_API_KEY`, `CORS_ORIGINS`, `ADMIN_EMAILS`는 대시보드에서 직접 입력합니다. `SECRET_KEY`는 Render가 자동으로 만듭니다.
-3. 시작 명령은 `python deploy_start.py`입니다. DB에 시연 데이터가 없을 때(처음 한 번)만 `demo_seed.py` → `demo_seed_b.py`(임베딩)를 실행하고 서버를 띄웁니다. 그 뒤로는 재배포해도 데이터가 그대로 남습니다.
-4. FE 배포 주소가 정해지면 `CORS_ORIGINS`를 그 주소로 바꿉니다.
+1. Supabase에서 프로젝트를 만듭니다(지역: Seoul `ap-northeast-2`, DB 비밀번호는 길게 무작위로). 대시보드 > Connect > **Session pooler** 주소를 복사합니다. Direct connection 주소는 IPv6 전용이라 Render에서 접속이 안 될 수 있습니다.
+2. Render 대시보드 > New > Blueprint > 이 레포 선택 → `render.yaml` 설정으로 서버가 만들어집니다. 만들 때 `DATABASE_URL`에 1번 주소를 넣습니다.
+3. `UPSTAGE_API_KEY`, `CORS_ORIGINS`, `ADMIN_EMAILS`는 대시보드에서 직접 입력합니다. `SECRET_KEY`는 Render가 자동으로 만듭니다.
+4. 시작 명령은 `python deploy_start.py`입니다. DB에 시연 데이터가 없을 때(처음 한 번)만 `demo_seed.py` → `demo_seed_b.py`(임베딩)를 실행하고 서버를 띄웁니다. 그 뒤로는 재배포해도 데이터가 그대로 남습니다.
+5. FE 배포 주소가 정해지면 `CORS_ORIGINS`를 그 주소로 바꿉니다.
 
-무료 서버는 15분 동안 요청이 없으면 잠들었다가 첫 요청에 30초~1분이 걸립니다(데이터는 Postgres에 남음). 시연 직전에 `/health`를 한 번 열어 깨워 두세요. 무료 Postgres는 만든 날부터 30일 뒤 만료되므로, 대회 일정보다 너무 일찍 만들지 마세요(요금·기간은 Render 대시보드에서 확인).
+무료 서버는 15분 동안 요청이 없으면 잠들었다가 첫 요청에 30초~1분이 걸립니다(데이터는 Supabase에 남음). 시연 직전에 `/health`를 한 번 열어 깨워 두세요. Supabase 무료 프로젝트는 일주일 넘게 요청이 없으면 일시 정지되니, 정지됐다면 Supabase 대시보드에서 다시 켭니다(요금·조건은 Supabase에서 확인).
 
-시연 데이터를 처음 상태로 되돌리려면 Render Shell을 쓸 수 있는 플랜이면 `python demo_seed.py --job 개발 --reset && python demo_seed_b.py`를 실행하고, 아니면 대시보드에서 `ondo-db`를 지우고 Blueprint를 다시 동기화합니다(빈 DB로 켜지면 `deploy_start.py`가 다시 채움).
+시연 데이터를 처음 상태로 되돌리려면 내 PC에서 `.env`의 `DATABASE_URL`을 Supabase 주소로 잠깐 바꾸고 `python demo_seed.py --job 개발 --reset && python demo_seed_b.py`를 실행합니다.
 
 ## AI 기능 (B, `app/ai/`)
 

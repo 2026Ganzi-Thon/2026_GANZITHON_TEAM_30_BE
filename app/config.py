@@ -11,7 +11,10 @@ POSTGRES_PREFIXES = ("postgres://", "postgresql://")
 def normalize_database_url(url: str) -> str:
     for prefix in POSTGRES_PREFIXES:
         if url.startswith(prefix):
-            return "postgresql+psycopg://" + url[len(prefix):]
+            url = "postgresql+psycopg://" + url[len(prefix):]
+            break
+    if ".supabase." in url and "sslmode=" not in url:
+        url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
 
 

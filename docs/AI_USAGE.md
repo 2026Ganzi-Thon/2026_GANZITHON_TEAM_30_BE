@@ -33,7 +33,7 @@ AI가 만든 코드는 아래 순서로 검증한 뒤에만 반영했습니다.
 | 단계 | 내용 |
 |---|---|
 | 읽기 | 사람이 diff를 직접 읽고, 권한 검사·쿼리·예외 처리 부분을 확인합니다. |
-| 테스트 | 기능마다 정상, 권한 없음, 비정상 입력 테스트를 함께 작성합니다. `pytest -q`로 SQLite에서 86개가 통과했고, 로컬 PostgreSQL 16에서도 전체 테스트(당시 85개)가 통과했습니다(2026-11-18). CI는 push마다 두 DB에서 모두 돌립니다. |
+| 테스트 | 기능마다 정상, 권한 없음, 비정상 입력 테스트를 함께 작성합니다. `pytest -q`로 SQLite에서 87개가 통과했고, 로컬 PostgreSQL 16에서도 전체 테스트(당시 85개)가 통과했습니다(2026-11-18). CI는 push마다 두 DB에서 모두 돌립니다. |
 | 의존성 | AI가 제안한 새 라이브러리는 받지 않았습니다. 요청 횟수 제한도 외부 패키지 없이 직접 구현했습니다(`app/ratelimit.py`). 모든 버전을 고정하고 `pip-audit`으로 검사합니다. |
 | 비밀값 | 코드와 문서에 실제 키를 넣지 않습니다. gitleaks를 CI에서 돌립니다. |
 
@@ -50,4 +50,5 @@ AI가 만든 코드는 아래 순서로 검증한 뒤에만 반영했습니다.
 | 외부 LLM에 사용자 원문(연락처 포함)이 그대로 전송됨 | 가린 뒤 보내도록 고쳤습니다. 테스트: `test_personal_info_is_masked_before_reaching_llm` |
 | 테스트 파일 하나가 DB 주소를 SQLite로 강제로 바꿔서, Postgres로 돌려도 실제로는 SQLite에서 테스트됨 | 환경변수가 있으면 그대로 쓰도록 고치고, 로컬 PostgreSQL 16에서 85개 통과와 DB에 데이터가 실제로 생긴 것까지 확인했습니다. CI에 `test-postgres` 작업을 추가했습니다. |
 | 시연 데이터가 AI 이어 답글을 이웃 댓글보다 나중에 넣어서, 발표 때 AI가 답하지 않을 뻔함 | 넣는 순서를 바꾸고 `test_demo_seed_fills_every_island_with_worried_neighbors`에서 확인합니다. |
+| CI가 `pytest`를 바로 실행하면 `app` 모듈을 못 찾아 테스트 전체가 실행되지 않음(로컬은 `python -m pytest`라 통과) | `pytest.ini`에 `pythonpath = .`를 넣어 어떻게 실행해도 같게 만들었습니다. |
 | `.env.example`에 `CORS_ORIGINS=*`가 기본값으로 들어 있었음 | 허용 목록 방식으로 바꿨습니다. 테스트: `test_security_headers_and_cors_allowlist` |
