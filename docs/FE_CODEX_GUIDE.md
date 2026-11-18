@@ -1,4 +1,4 @@
-# ON-DO FE 작업 가이드 (Codex용)
+# ON-DO FE 작업 가이드 
 
 > 이 파일을 FE 저장소(`2026_GANZITHON_TEAM_30_FE`) 루트에 `AGENTS.md`로 복사해서 쓰세요.
 > 기준: FE `deb7b87`, BE `BE-A` 최신. 마감 11/20 23:59.
