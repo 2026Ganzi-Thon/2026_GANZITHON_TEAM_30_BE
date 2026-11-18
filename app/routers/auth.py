@@ -56,8 +56,18 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
     if body.purpose == "login" and user_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "가입하지 않은 이메일입니다. 회원가입을 먼저 해 주세요")
 
+    demo_account = email.rsplit("@", 1)[-1] in config.DEMO_CODE_DOMAINS
+    reveal = demo_account or (
+        config.EMAIL_MODE == "demo" and (config.ENV != "production" or body.purpose == "signup")
+    )
+    if config.EMAIL_MODE == "demo" and not reveal:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            {"code": "EMAIL_UNAVAILABLE", "message": "지금은 인증 메일을 보낼 수 없어요. 가입한 기기에서는 로그인 상태가 유지돼요"},
+        )
+
     code = issue_code(db, email, body.purpose)
-    if config.EMAIL_MODE == "smtp":
+    if config.EMAIL_MODE == "smtp" and not demo_account:
         try:
             send_code_email(email, code, body.purpose)
         except Exception:  # SMTP 연결·인증 실패 등: 코드를 저장하지 않고 알려 준다
@@ -67,7 +77,7 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
     return EmailCodeOut(
         expires_in=config.EMAIL_CODE_TTL_SECONDS,
         resend_after=config.EMAIL_CODE_RESEND_SECONDS,
-        demo_code=code if config.EMAIL_MODE == "demo" else None,
+        demo_code=code if reveal else None,
     )
 
 

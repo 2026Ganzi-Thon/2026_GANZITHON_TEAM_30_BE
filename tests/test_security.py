@@ -275,6 +275,45 @@ def test_demo_code_is_never_returned_in_smtp_mode(monkeypatch):
     assert len(sent) == 1
 
 
+def test_production_demo_mode_never_leaks_login_codes(monkeypatch):
+    headers, _ = signup()
+    email = http.get("/auth/me", headers=headers).json()["email"]
+    monkeypatch.setattr(config, "ENV", "production")
+    r = http.post("/auth/email-code", json={"email": email, "purpose": "login"})
+    assert r.status_code == 503
+    assert r.json()["code"] == "EMAIL_UNAVAILABLE"
+    assert "demo_code" not in r.text
+    with SessionLocal() as db:
+        assert db.scalar(select(EmailCode).where(EmailCode.email == email, EmailCode.purpose == "login")) is None
+
+    r = http.post("/auth/email-code", json={"email": "newcomer@ondo-test.com", "purpose": "signup"})
+    assert r.status_code == 200 and r.json()["demo_code"]
+
+
+def test_demo_accounts_keep_working_in_production(monkeypatch):
+    email = "presenter@example.com"
+    code = email_code(email, "signup")
+    r = http.post("/auth/signup", json={
+        "email": email, "code": code, "job": "개발", "years": "1~3년", "character": "tiger", "agree_privacy": True,
+    })
+    assert r.status_code == 201, r.text
+    monkeypatch.setattr(config, "ENV", "production")
+    r = http.post("/auth/email-code", json={"email": email, "purpose": "login"})
+    assert r.status_code == 200 and r.json()["demo_code"]
+    r = http.post("/auth/login", json={"email": email, "code": r.json()["demo_code"]})
+    assert r.status_code == 200
+
+    sent = []
+    monkeypatch.setattr(config, "EMAIL_MODE", "smtp")
+    monkeypatch.setattr("app.routers.auth.send_code_email", lambda to, code, purpose: sent.append(code))
+    with SessionLocal() as db:
+        db.query(EmailCode).filter(EmailCode.email == email).delete()
+        db.commit()
+    r = http.post("/auth/email-code", json={"email": email, "purpose": "login"})
+    assert r.status_code == 200 and r.json()["demo_code"]
+    assert sent == []
+
+
 def test_personal_info_is_masked_before_reaching_llm(monkeypatch):
     seen = {}
 

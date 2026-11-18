@@ -40,7 +40,8 @@ API 문서: http://localhost:8000/docs
 2. 가입·로그인 요청에 `code`를 같이 보낸다
 
 - `EMAIL_MODE=demo`(기본): 메일을 보내지 않고 응답의 `demo_code`에 코드가 담긴다. FE는 "체험용 인증코드"로 보여 주면 된다.
-- `EMAIL_MODE=smtp`: 실제 메일 발송, `demo_code`는 `null`. `SMTP_USER`·`SMTP_PASSWORD`가 없으면 서버가 켜지지 않는다.
+- 운영(`ENV=production`) + demo 모드: 로그인 코드는 `DEMO_CODE_DOMAINS`(기본 `example.com`) 시연 계정에만 `demo_code`로 주고, 실제 이메일 로그인은 503 `EMAIL_UNAVAILABLE` (남의 이메일로 로그인 코드를 받아 가는 계정 탈취 차단).
+- `EMAIL_MODE=smtp`: 실제 메일 발송, `demo_code`는 `null` (시연 도메인 계정만 예외로 메일 없이 `demo_code`). `SMTP_USER`·`SMTP_PASSWORD`가 없으면 서버가 켜지지 않는다.
 - 발송 실패 시 502. 발표 직전에 네트워크가 불안하면 `EMAIL_MODE=demo`로 바꿔 서버를 다시 켜면 된다.
 
 토큰은 요청 헤더에 `Authorization: Bearer <access_token>` 으로 보냅니다.
@@ -90,7 +91,7 @@ API 문서: http://localhost:8000/docs
 
 - 위협별 대응과 확인 테스트: [SECURITY.md](SECURITY.md)
 - AI 사용과 검증 기록: [docs/AI_USAGE.md](docs/AI_USAGE.md)
-- `pip install -r requirements-dev.txt` 후 `pytest -q` (87개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
+- `pip install -r requirements-dev.txt` 후 `pytest -q` (89개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
 
 ## 환경변수
 
@@ -115,6 +116,7 @@ API 문서: http://localhost:8000/docs
 | INVITE_DAILY_PER_USER | 3 (한 사람이 24시간 동안 받는 초대 수) |
 | UPSTAGE_API_KEY | 없음 (AI 기능용, 서버에만 설정) |
 | EMAIL_MODE | demo (`smtp`면 실제 메일 발송) |
+| DEMO_CODE_DOMAINS | example.com (쉼표로 여러 개, 운영에서도 응답으로 코드를 주는 시연 계정 도메인) |
 | SMTP_HOST / SMTP_PORT | smtp.gmail.com / 465 (587이면 STARTTLS) |
 | SMTP_USER / SMTP_PASSWORD | 없음 (Gmail은 계정 주소 / 앱 비밀번호) |
 | SMTP_FROM | SMTP_USER와 같음 |
