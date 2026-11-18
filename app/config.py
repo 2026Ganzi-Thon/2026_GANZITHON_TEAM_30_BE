@@ -6,6 +6,14 @@ load_dotenv()  # 프로젝트 루트의 .env를 환경변수로 읽음 (이미 �
 
 ENV = os.getenv("ENV", "dev")
 POSTGRES_PREFIXES = ("postgres://", "postgresql://")
+LOCAL_DB_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def _db_host(url: str) -> str:
+    authority = url.split("://", 1)[-1].split("/", 1)[0].rsplit("@", 1)[-1]
+    if authority.startswith("["):
+        return authority[1:authority.find("]")]
+    return authority.split(":", 1)[0]
 
 
 def normalize_database_url(url: str) -> str:
@@ -13,7 +21,7 @@ def normalize_database_url(url: str) -> str:
         if url.startswith(prefix):
             url = "postgresql+psycopg://" + url[len(prefix):]
             break
-    if ".supabase." in url and "sslmode=" not in url:
+    if url.startswith("postgresql") and "sslmode=" not in url and _db_host(url) not in LOCAL_DB_HOSTS:
         url += ("&" if "?" in url else "?") + "sslmode=require"
     return url
 
