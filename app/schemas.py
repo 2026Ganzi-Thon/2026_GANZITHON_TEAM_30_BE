@@ -67,6 +67,12 @@ class EmailCodeRequest(BaseModel):
     purpose: Literal["signup", "login"]
 
 
+class EmailCodeVerify(BaseModel):
+    email: EmailStr
+    purpose: Literal["signup", "login"]
+    code: str = Field(pattern=r"^\d{6}$")
+
+
 class EmailCodeOut(BaseModel):
     expires_in: int  # 코드 유효 시간(초)
     resend_after: int  # 다시 받기까지 기다릴 시간(초)
@@ -139,6 +145,11 @@ class UserResponse(BaseModel):
     years: str | None
     nickname: str
     character: str
+
+
+class SignupResponse(UserResponse):
+    access_token: str  # 가입하면 바로 로그인 상태 (인증코드를 한 번 더 받지 않게)
+    token_type: str = "bearer"
 
 class CommentCreate(BaseModel):
     content: str = Field(min_length=1, max_length=COMMENT_MAX)

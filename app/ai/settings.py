@@ -26,7 +26,7 @@ GEMINI_EMBED_MODEL = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 GEMINI_EMBED_DIM = int(os.getenv("GEMINI_EMBED_DIM", "768"))
 
 # 게시 전 검사는 사용자가 기다리므로 짧게. 넘기면 규칙 검사 결과만으로 판단한다.
-CHECK_TIMEOUT_SECONDS = float(os.getenv("AI_CHECK_TIMEOUT", "5"))
+CHECK_TIMEOUT_SECONDS = float(os.getenv("AI_CHECK_TIMEOUT", "8"))  # 5초는 가끔 시간 초과로 규칙 검사만 됐다
 # AI 첫 댓글·임베딩은 백그라운드라 조금 여유 있게.
 BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("AI_BACKGROUND_TIMEOUT", "15"))
 

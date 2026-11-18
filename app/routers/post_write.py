@@ -136,6 +136,33 @@ def _get_my_post(db: Session, post_id: int, me: User) -> Post:
 
 # ---------- API ----------
 
+class PostCheckIn(BaseModel):
+    title: str = Field(default="", max_length=POST_TITLE_MAX)
+    content: str = Field(default="", max_length=POST_CONTENT_MAX)
+
+
+class PostCheckOut(BaseModel):
+    ok: bool  # false면 공개 게시 시 422 NEED_EDIT로 반려될 내용
+    reason: str | None
+    suggestion: str | None
+    issues: list[dict]  # [{type, text, start, end, guide}] — start/end는 "제목+줄바꿈+본문" 기준 위치
+    crisis: bool  # 위기 신호 (막지 않고 게시 후 상담 안내)
+
+
+@router.post("/check", response_model=PostCheckOut)
+def check_post(body: PostCheckIn, me: User = Depends(get_current_user)):
+    """게시하지 않고 검사만 한다. FE의 '게시 전 AI 점검' 화면에서 결과를 미리 보여 줄 때 쓴다.
+    실제 게시(POST/PATCH)에서도 같은 검사를 다시 하므로, 이 결과를 건너뛰어도 걸러진다."""
+    result = check_text(body.title + "\n" + body.content, kind="post")
+    return PostCheckOut(
+        ok=result.ok,
+        reason=result.reason,
+        suggestion=result.suggestion,
+        issues=result.issues_dict(),
+        crisis=result.crisis,
+    )
+
+
 @router.post("", response_model=PostWriteOut, status_code=status.HTTP_201_CREATED)
 def create_post(
     body: PostCreate,

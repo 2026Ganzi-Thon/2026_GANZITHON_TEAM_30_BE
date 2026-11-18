@@ -68,7 +68,33 @@ _COMPANY = re.compile(
     + r"|\(주\)\s*[가-힣A-Za-z]+|주식회사\s*[가-힣A-Za-z]+|[가-힣A-Za-z]+\s*주식회사"
 )
 
-_BANNED = re.compile(r"시발|씨발|ㅅㅂ|병신|ㅂㅅ|개새끼|좆|존나|지랄|미친놈|미친년|꺼져")
+# 욕설은 엄격하게 거른다: 누구를 향하지 않은 혼잣말이어도 막는다.
+# 초성 줄임말(ㅈㄴ·ㅅㅂ), 변형 표기(개새낑·씨빨), 영문(sibal·tlqkf·fuck)도 포함.
+# 숫자·기호를 끼운 변형(ㅆ1발, 시.발)은 _normalize로 숫자·기호를 지운 뒤 찾는다.
+# 띄어쓰기는 지우지 않는다 ("다시 발표"가 "시발"로 잡히지 않게).
+# AI가 응답하지 못해도 이 규칙만으로 걸러진다.
+_BANNED = re.compile(
+    r"[시씨쓰ㅅㅆ][발빨벌팔](?!점)|ㅅㅂ|ㅆㅂ|ㅅㅃ|"  # 시발·씨빨·ㅆ발 (시발점은 제외)
+    r"병신|븅신|빙신|ㅂㅅ|ㅄ|"
+    r"개[새섀색쌔][끼끄낑기키]|[새쌔섀]끼|ㅅㄲ|ㄱㅅㄲ|"  # 개새끼·새끼
+    r"좆|ㅈ같|ㅈ까|존나|졸라|조낸|존내|ㅈㄴ|ㅈ나|"
+    r"지랄|ㅈㄹ|염병|썅|쌍년|개년|년놈|씹[새세할창]|"
+    r"미친[놈년새것]|ㅁㅊ|개같|꺼져|ㄲㅈ|닥쳐|엿\s?먹|"
+    r"sibal|ssibal|shibal|tlqkf|qudtls|fuck|shit|bitch|wtf"
+)
+# 욕설 사이에 끼운 숫자·기호 (띄어쓰기는 남긴다)
+_FILLER = re.compile(r"[0-9!@#$%^&*()_+=\-.,~`'\"/\\|<>?:;\[\]{}·•★☆♡♥]")
+
+
+def _find_banned(text: str) -> list[Issue]:
+    """숫자·기호를 지운 글에서 욕설을 찾고, 원문 위치로 되돌려 표시한다."""
+    kept = [(i, ch.lower()) for i, ch in enumerate(text) if not _FILLER.match(ch)]
+    normalized = "".join(ch for _, ch in kept)
+    issues = []
+    for m in _BANNED.finditer(normalized):
+        start, end = kept[m.start()][0], kept[m.end() - 1][0] + 1
+        issues.append(Issue("OFFENSIVE", text[start:end], start, end, GUIDE["banned"]))
+    return issues
 
 _CRISIS = re.compile(
     r"죽고\s?싶|자살|자해|극단적\s?(인\s?)?선택|목숨을\s?끊|살기\s?싫|사라지고\s?싶|뛰어내리|"
@@ -106,7 +132,7 @@ def _rule_check(text: str) -> tuple[list[Issue], list[Issue], bool]:
         + _find(_EMAIL, text, "PERSONAL_INFO", GUIDE["email"])
         + _find(_COMPANY, text, "PERSONAL_INFO", GUIDE["company"])
     )
-    offensive = _find(_BANNED, text, "OFFENSIVE", GUIDE["banned"])
+    offensive = _find_banned(text)
     return personal, offensive, has_crisis_signal(text)
 
 

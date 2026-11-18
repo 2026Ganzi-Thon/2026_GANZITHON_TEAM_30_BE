@@ -24,7 +24,8 @@ API 문서: http://localhost:8000/docs
 | GET | /auth/options | 직무·연차·캐릭터·고민 주제·위로 방식 선택지 (FE와 같은 값) | - |
 | GET | /auth/nickname?character=tiger | 닉네임 추천 (형용사 + 캐릭터 + 4자리 숫자, 예: 포근한 호랑이 4821) | - |
 | POST | /auth/email-code | 인증코드 받기 `{email, purpose: signup/login}` → `{expires_in, resend_after, demo_code}` | - |
-| POST | /auth/signup | 회원가입 (비밀번호 없음, `code` 필수. 캐릭터·개인정보 동의 필수, 연차 선택: `""`이면 선택 안 함) | - |
+| POST | /auth/email-code/verify | 코드가 맞는지만 확인 (소모하지 않음) `{email, purpose, code}` → 204 | - |
+| POST | /auth/signup | 회원가입 (비밀번호 없음, `code` 필수. 캐릭터·개인정보 동의 필수, 연차 선택: `""`이면 선택 안 함). 응답에 `access_token` 포함 | - |
 | POST | /auth/login | `{email, code}`로 로그인 → access_token 발급 | - |
 | POST | /auth/logout | 현재 토큰 폐기 | 필요 |
 | GET | /auth/me | 내 정보 | 필요 |
@@ -56,6 +57,7 @@ API 문서: http://localhost:8000/docs
 | GET | /users/{id}/posts?island_id= | 이웃 한 명의 공개 고민 |
 | GET | /users/me/posts | 내 고민 (나만 보기 포함, `visibility` 필터) |
 | GET | /users/me/comments | 내가 쓴 댓글 |
+| POST | /posts/check | 게시 전 미리 검사 (저장 안 함) `{title, content}` → `{ok, reason, suggestion, issues, crisis}` |
 | POST | /posts | 고민 작성 (게시 전 검사, 반려 시 422 `{code, reason, suggestion, issues}`, 위기 신호면 201 + `crisis_support`) |
 | PATCH | /posts/{id} | 내 고민 수정 (내용 변경·공개 전환 시 다시 검사) |
 | DELETE | /posts/{id} | 내 고민 삭제 |

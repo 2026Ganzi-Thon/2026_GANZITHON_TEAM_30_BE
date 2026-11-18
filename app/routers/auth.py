@@ -16,6 +16,8 @@ from app.schemas import (
     EmailCodeRequest,
     LoginRequest,
     NicknameSuggestion,
+    SignupResponse,
+    EmailCodeVerify,
     SignupRequest,
     TokenResponse,
     UserResponse,
@@ -68,7 +70,15 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
     )
 
 
-@router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/email-code/verify", status_code=status.HTTP_204_NO_CONTENT)
+def check_email_code(body: EmailCodeVerify, db: Session = Depends(get_db)):
+    """코드가 맞는지만 확인한다 (소모하지 않음). FE가 인증 단계에서 바로 '인증 완료'를 보여 줄 때 쓴다.
+    틀리면 남은 횟수가 줄어든다. 실제 소모는 가입·로그인이 성공할 때."""
+    verify_code(db, body.email.lower(), body.purpose, body.code)
+    db.commit()  # 틀린 횟수(attempts) 저장
+
+
+@router.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 def signup(body: SignupRequest, db: Session = Depends(get_db)):
     email = body.email.lower() 
 
@@ -102,8 +112,9 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
        
         db.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, "이메일 또는 닉네임이 이미 사용 중입니다")
-    db.refresh(user)  
-    return user
+    db.refresh(user)
+    profile = UserResponse.model_validate(user).model_dump()
+    return SignupResponse(**profile, access_token=create_access_token(user.id))
 
 
 @router.post("/login", response_model=TokenResponse)
