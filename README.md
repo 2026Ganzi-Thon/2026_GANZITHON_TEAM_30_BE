@@ -93,6 +93,16 @@ API 문서: http://localhost:8000/docs
 | GEMINI_API_KEY | 없음 (Upstage 대신 Gemini를 쓸 때) |
 | AI_PROVIDER | auto (`upstage` / `gemini` / `local`) |
 | SEARCH_MIN_SIMILARITY | 제공사별 기본값 (upstage 0.30, gemini 0.55, local 0.12) |
+| DEMO_JOB | 개발 (배포 시작 때 넣는 시연 데이터의 직무) |
+
+## 배포 (Render)
+
+1. Render 대시보드 > New > Blueprint > 이 레포 선택 → `render.yaml` 설정으로 서버가 만들어집니다.
+2. `UPSTAGE_API_KEY`만 대시보드에서 직접 입력합니다. `SECRET_KEY`는 Render가 자동으로 만듭니다.
+3. 시작 명령은 `python deploy_start.py`입니다. DB에 시연 데이터가 없으면 `demo_seed.py` → `demo_seed_b.py`(임베딩)를 실행한 뒤 서버를 띄웁니다.
+4. FE 배포 주소가 정해지면 `CORS_ORIGINS`를 그 주소로 바꿉니다.
+
+무료 플랜은 재시작·재배포 때 SQLite 파일이 초기화되고, 15분 동안 요청이 없으면 잠들었다가 첫 요청에 30초~1분이 걸립니다. 시연 직전에 `/health`를 한 번 열어 깨워 두세요.
 
 ## AI 기능 (B, `app/ai/`)
 

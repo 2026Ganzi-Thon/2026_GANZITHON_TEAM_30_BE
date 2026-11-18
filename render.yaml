@@ -1,0 +1,29 @@
+# Render Blueprint: 대시보드 > New > Blueprint 에서 이 레포를 고르면 아래 설정으로 서버가 만들어진다.
+# sync: false 값(UPSTAGE_API_KEY)은 만들 때 대시보드에서 직접 입력한다. 키를 이 파일에 적지 말 것.
+services:
+  - type: web
+    name: ondo-api
+    runtime: python
+    plan: free
+    region: singapore # 한국과 가장 가까운 지역
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python deploy_start.py # 데이터가 없으면 시연 데이터를 넣고 서버 시작
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true # Render가 무작위 값을 만들어 줌
+      - key: UPSTAGE_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*" # FE 배포 주소가 나오면 그 주소로 바꿀 것 (예: https://ondo-fe.onrender.com)
+      - key: EMAIL_MODE
+        value: demo
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "10080" # 7일 (시연 중 로그인 풀림 방지)
+      - key: DEMO_JOB
+        value: 개발

@@ -8,7 +8,7 @@ ENV = os.getenv("ENV", "dev")
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./ganzithon.db")
 
 _DEV_SECRET = "dev-only-secret-key-change-me-in-production-32b+"
-SECRET_KEY = os.getenv("SECRET_KEY", _DEV_SECRET)
+SECRET_KEY = os.getenv("SECRET_KEY") or _DEV_SECRET  # 빈 값도 "설정 안 함"으로 본다
 if ENV == "production" and SECRET_KEY == _DEV_SECRET:
     raise RuntimeError("배포 환경에서는 SECRET_KEY 환경변수를 반드시 설정해야 합니다")
 
