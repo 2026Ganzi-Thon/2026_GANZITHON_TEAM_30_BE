@@ -30,7 +30,11 @@ services:
       - key: ADMIN_EMAILS
         sync: false
       - key: EMAIL_MODE
-        value: demo
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "10080" # 7일 (시연 중 로그인 풀림 방지)
       - key: DEMO_JOB

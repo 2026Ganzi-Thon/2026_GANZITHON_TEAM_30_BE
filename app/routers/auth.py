@@ -56,7 +56,7 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
     if body.purpose == "login" and user_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "가입하지 않은 이메일입니다. 회원가입을 먼저 해 주세요")
 
-    demo_account = email.rsplit("@", 1)[-1] in config.DEMO_CODE_DOMAINS
+    demo_account = email in config.DEMO_CODE_EMAILS or email.rsplit("@", 1)[-1] in config.DEMO_CODE_DOMAINS
     reveal = demo_account or (
         config.EMAIL_MODE == "demo" and (config.ENV != "production" or body.purpose == "signup")
     )

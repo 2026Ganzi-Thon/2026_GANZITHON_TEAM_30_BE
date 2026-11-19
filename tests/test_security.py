@@ -314,6 +314,22 @@ def test_demo_accounts_keep_working_in_production(monkeypatch):
     assert sent == []
 
 
+def test_only_listed_demo_email_skips_real_mail(monkeypatch):
+    sent = []
+    monkeypatch.setattr(config, "ENV", "production")
+    monkeypatch.setattr(config, "EMAIL_MODE", "smtp")
+    monkeypatch.setattr("app.routers.auth.send_code_email", lambda to, code, purpose: sent.append(to))
+
+    r = http.post("/auth/email-code", json={"email": "Test1@corp.com", "purpose": "signup"})
+    assert r.status_code == 200 and r.json()["demo_code"]
+    assert sent == []
+
+    for email in ("test2@corp.com", "worker@ondo-company.com"):
+        r = http.post("/auth/email-code", json={"email": email, "purpose": "signup"})
+        assert r.status_code == 200 and r.json()["demo_code"] is None
+    assert sent == ["test2@corp.com", "worker@ondo-company.com"]
+
+
 def test_personal_info_is_masked_before_reaching_llm(monkeypatch):
     seen = {}
 

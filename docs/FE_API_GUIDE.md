@@ -26,7 +26,7 @@
 
 | API | 내용 |
 |---|---|
-| `POST /auth/email-code` `{email, purpose:"signup"/"login"}` | `{expires_in:300, resend_after:60, demo_code}`. 시연 모드면 `demo_code`에 코드가 옴. 409 이미 가입 / 404 미가입 / 429 60초 안 재요청 / 503 `code: EMAIL_UNAVAILABLE` (운영 demo 모드에서 실제 이메일 로그인 요청, `detail.message` 그대로 보여 주기). 시연 계정(`@example.com`)은 운영에서도 `demo_code`가 옴 |
+| `POST /auth/email-code` `{email, purpose:"signup"/"login"}` | `{expires_in:300, resend_after:60, demo_code}`. 시연 모드면 `demo_code`에 코드가 옴. 409 이미 가입 / 404 미가입 / 429 60초 안 재요청 / 503 `code: EMAIL_UNAVAILABLE` (운영 demo 모드에서 실제 이메일 로그인 요청, `detail.message` 그대로 보여 주기). 시연 계정(`@example.com`, `test1@corp.com`)은 운영에서도 `demo_code`가 옴. 그 밖의 이메일은 smtp 모드면 실제 메일로 코드가 감 |
 | `POST /auth/email-code/verify` `{email, purpose, code}` | 204 맞음, 400 틀림(남은 횟수 포함). **코드를 소모하지 않음** → 같은 코드로 가입 |
 | `GET /auth/nickname?character=tiger` | `{nickname:"포근한 호랑이 4821"}`. 닉네임은 자유 입력 없이 이것으로만 뽑음 |
 | `POST /auth/signup` `{email, code, job, years, character, nickname, agree_privacy}` | 201 `{..., access_token}` → **바로 로그인 상태**. 400 코드 오류 / 409 중복 / 422 형식·미동의 |

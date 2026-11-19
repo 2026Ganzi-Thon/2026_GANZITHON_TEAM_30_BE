@@ -113,6 +113,7 @@ SMTP_FROM = os.getenv("SMTP_FROM", "") or SMTP_USER
 if EMAIL_MODE == "smtp" and not (SMTP_USER and SMTP_PASSWORD):
     raise RuntimeError("EMAIL_MODE=smtp이면 SMTP_USER와 SMTP_PASSWORD를 설정해야 합니다")
 DEMO_CODE_DOMAINS = {d.strip().lower() for d in os.getenv("DEMO_CODE_DOMAINS", "example.com").split(",") if d.strip()}
+DEMO_CODE_EMAILS = {e.strip().lower() for e in os.getenv("DEMO_CODE_EMAILS", "test1@corp.com").split(",") if e.strip()}
 
 EMAIL_CODE_TTL_SECONDS = 5 * 60  # 코드 유효 시간
 EMAIL_CODE_RESEND_SECONDS = 60  # 같은 이메일로 다시 받기까지 기다리는 시간
