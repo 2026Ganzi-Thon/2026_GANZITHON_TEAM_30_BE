@@ -105,7 +105,7 @@ API 문서: http://localhost:8000/docs
 
 - 위협별 대응과 확인 테스트: [SECURITY.md](SECURITY.md)
 - AI 사용과 검증 기록: [docs/AI_USAGE.md](docs/AI_USAGE.md)
-- `pip install -r requirements-dev.txt` 후 `pytest -q` (112개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
+- `pip install -r requirements-dev.txt` 후 `pytest -q` (113개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
 
 ## 환경변수
 

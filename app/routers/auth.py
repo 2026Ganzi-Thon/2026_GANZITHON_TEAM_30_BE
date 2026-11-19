@@ -132,6 +132,7 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
         years=body.years,  
         nickname=nickname,
         character=body.character,
+        color=body.color,
         privacy_agreed_at=datetime.now(timezone.utc),
     )
     db.add(user)

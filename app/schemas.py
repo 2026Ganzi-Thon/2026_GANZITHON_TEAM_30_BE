@@ -12,6 +12,14 @@ class SignupRequest(BaseModel):
     nickname: str | None = Field(default=None, max_length=30, description="비우면 서버가 자동 생성. 예) 포근한 호랑이 4821")
     agree_privacy: bool
     remember: bool = False  # "로그인 유지": 토큰을 30일 동안 유효하게
+    color: str = "original"  # 가입 화면 팔레트에서 고른 캐릭터 색감
+
+    @field_validator("color")
+    @classmethod
+    def signup_color_must_exist(cls, v: str) -> str:
+        if v not in CHARACTER_COLORS:
+            raise ValueError(f"색감은 {list(CHARACTER_COLORS)} 중 하나여야 합니다")
+        return v
 
     @field_validator("job")
     @classmethod

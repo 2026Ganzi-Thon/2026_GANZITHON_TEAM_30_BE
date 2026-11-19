@@ -728,3 +728,20 @@ def test_similar_worries_share_one_map_bubble():
     assert posts[lead][0]["bubble_size"] >= 3
     mine = next(p for p, is_me in posts.values() if is_me)
     assert mine["bubble"] is None  # 내 글은 합치지 않는다
+
+
+def test_signup_can_pick_character_color():
+    """가입 화면 팔레트: 가입할 때 고른 색감이 그대로 저장된다. 없는 색감은 422."""
+    from support import email_code
+
+    email = "palette-signup@ondo-test.com"
+    body = {"email": email, "job": "개발", "years": None, "character": "rabbit",
+            "agree_privacy": True, "color": "ocean"}
+    code = email_code(email, "signup")
+    bad = http.post("/auth/signup", json={**body, "code": code, "color": "neon"})
+    assert bad.status_code == 422  # 형식 검사에서 막혀 코드는 그대로 남는다
+
+    r = http.post("/auth/signup", json={**body, "code": code})
+    assert r.status_code == 201, r.text
+    me = http.get("/auth/me", headers={"Authorization": f"Bearer {r.json()['access_token']}"}).json()
+    assert me["color"] == "ocean"
