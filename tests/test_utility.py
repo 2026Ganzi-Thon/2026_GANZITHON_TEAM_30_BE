@@ -602,3 +602,78 @@ def test_post_check_suggests_more_detail_for_thin_posts():
     full = http.post("/posts/check", json={"title": "팀장님과 자꾸 부딪혀요",
                                            "content": "회의 때마다 제 의견을 끝까지 안 듣고 말을 끊으세요."}, headers=me).json()
     assert full["hint"] is None
+
+
+def test_island_insights_report():
+    """섬 고민 리포트: 다른 테스트 글과 섞이지 않게 새 섬을 따로 만들어 계산한다."""
+    from datetime import datetime, timedelta, timezone
+
+    import numpy as np
+
+    from app.ai.embedding import upsert_post_embedding
+    from app.database import SessionLocal
+    from app.insights import MIN_POSTS, copula, island_insights, similar_groups, with_and
+    from app.models import Comment, Island, Post, Reaction, User
+
+    assert copula("번아웃·무기력") == "이에요" and copula("들어주세요") == "예요"
+    assert with_and("야근") == "과" and with_and("회의") == "와"
+
+    # 닮은 글 묶기: 0·1·2가 서로 닮고 3은 동떨어짐 → 3개짜리 묶음 하나
+    v = np.array([[1, 0], [0.98, 0.2], [0.97, 0.24], [0, 1]], dtype=np.float32)
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    posts = {i: Post(id=i, title=f"글{i}", topic="워라밸") for i in range(4)}
+    groups = similar_groups([0, 1, 2, 3], v @ v.T, 0.9, posts)
+    assert len(groups) == 1 and groups[0].size == 3
+
+    users = [signup()[1] for _ in range(4)]
+    now = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        island = Island(type="job", job="리포트테스트", name="리포트섬")  # 테스트마다 새 DB라 한 번만 만들어짐
+        db.add(island)
+        db.commit()
+        overtime = "야근이 너무 많아서 퇴근하고 나면 아무것도 못 하고 잠만 자요"
+        rows = [
+            (users[0], "업무량·스트레스", "야근이 너무 많아요", overtime, 0),
+            (users[1], "업무량·스트레스", "야근 때문에 지쳐요", overtime + " 매일", 1),
+            (users[2], "업무량·스트레스", "야근이 계속돼요", overtime + " 주말에도", 2),
+            (users[3], "연애·이별", "헤어지고 일이 손에 안 잡혀요", "이별 뒤로 회의 때도 멍하게 있어요", 3),
+            (users[3], "경제·금전", "월급이 그대로예요", "물가는 오르는데 연봉은 몇 년째 같아요", 30),
+        ]
+        made = []
+        for uid, topic, title, content, hours_ago in rows:
+            p = Post(user_id=uid, island_id=island.id, topic=topic, title=title, content=content,
+                     comfort_type="empathy", visibility="public", status="published",
+                     created_at=now - timedelta(hours=hours_ago))
+            db.add(p)
+            db.commit()
+            upsert_post_embedding(db, p)
+            made.append(p)
+        # 오늘 공감 2개가 모인 글, 이웃 댓글이 달린 글
+        db.add_all([Reaction(post_id=made[1].id, user_id=users[2]), Reaction(post_id=made[1].id, user_id=users[3])])
+        db.add(Comment(post_id=made[3].id, user_id=users[0], content="저도 그랬어요"))
+        db.commit()
+
+        me = db.get(User, users[0])
+        out = island_insights(db, island, me, set())
+        assert out.enough and out.total_posts == MIN_POSTS
+        assert out.topics[0].key == "업무량·스트레스" and out.topics[0].count == 3
+        assert out.categories[0].label == "업무·직장생활"
+        assert out.rising.topic == "업무량·스트레스" and out.rising.last_week == 0
+        assert sum(out.time.days) == 5 and out.comfort[0].label == "들어주세요"
+        assert out.groups and out.groups[0].size >= 3  # 야근 글 셋이 한 묶음
+        assert out.me.post_id == made[0].id and out.me.neighbors == 2 and out.me.topic_rank == 1
+        assert out.warmest.post_id == made[1].id and out.warmest.count == 2
+        assert out.waiting is not None and out.waiting.post_id not in (made[0].id, made[3].id)  # 내 글·답 달린 글 제외
+        assert any("업무량·스트레스" in line for line in out.headlines)
+
+        # 차단한 사람의 글은 통째로 빠진다 → 4개라 리포트를 보여 주지 않음
+        hidden = island_insights(db, island, me, {users[3]})
+        assert hidden.total_posts == 3 and not hidden.enough and hidden.headlines == []
+
+
+def test_island_insights_api_respects_island_access():
+    me, _ = signup(job="영업")
+    r = http.get(f"/islands/{island_id(None)}/insights", headers=me)
+    assert r.status_code == 200, r.text
+    assert {"enough", "headlines", "topics", "groups", "me", "warmest", "waiting"} <= set(r.json())
+    assert http.get(f"/islands/{island_id('개발')}/insights", headers=me).status_code == 403

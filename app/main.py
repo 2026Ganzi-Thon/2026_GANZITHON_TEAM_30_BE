@@ -12,7 +12,7 @@ from app.database import Base, SessionLocal, engine, upgrade_schema
 from app.errors import register_error_handlers
 from app.middleware import register_middleware
 from app.queries import ensure_islands, purge_expired
-from app.routers import admin, auth, islands, notifications, post_write, posts, safety, search, stats, users
+from app.routers import admin, auth, insights, islands, notifications, post_write, posts, safety, search, stats, users
 
 log = logging.getLogger("app")
 
@@ -52,6 +52,7 @@ app.include_router(search.router)
 app.include_router(notifications.router)
 app.include_router(safety.router)
 app.include_router(stats.router)
+app.include_router(insights.router)
 app.include_router(admin.router)
 
 

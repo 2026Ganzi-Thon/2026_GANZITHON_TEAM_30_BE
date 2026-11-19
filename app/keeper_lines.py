@@ -197,12 +197,20 @@ LINES: dict[tuple[int, str], list[str]] = {
 }
 
 
+def moment_of(now_kst: datetime) -> tuple[int, str]:
+    """(요일 0=월, 시간대). 새벽 0~5시는 아직 '전날 밤': 월요일 새벽 1시 = 일요일 밤 (출근 걱정에 뒤척이는 시간)."""
+    weekday = (now_kst - timedelta(hours=5)).weekday() if now_kst.hour < 5 else now_kst.weekday()
+    return weekday, slot_of(now_kst.hour)
+
+
+def moment_name(weekday: int, slot: str) -> str:
+    return f"{DAY_NAMES[weekday]} {SLOT_NAMES[slot]}"
+
+
 def keeper_line(now_kst: datetime) -> tuple[str, str]:
     """(언제인지, 한마디). 예: ("월요일 아침", "월요일 아침엔 …")."""
-    slot = slot_of(now_kst.hour)
-    # 새벽 0~5시는 아직 '전날 밤': 월요일 새벽 1시 = 일요일 밤 (출근 걱정에 뒤척이는 시간)
-    weekday = (now_kst - timedelta(hours=5)).weekday() if now_kst.hour < 5 else now_kst.weekday()
+    weekday, slot = moment_of(now_kst)
     lines = LINES[(weekday, slot)]
     # 같은 시각엔 모두 같은 문구, 날짜·시각이 바뀌면 다음 문구로
     line = lines[(now_kst.toordinal() + now_kst.hour) % len(lines)]
-    return f"{DAY_NAMES[weekday]} {SLOT_NAMES[slot]}", line
+    return moment_name(weekday, slot), line
