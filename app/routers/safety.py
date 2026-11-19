@@ -54,7 +54,7 @@ def appeal(body: AppealCreate, me: User = Depends(get_current_user), db: Session
     if case is None or case.owner_id != me.id or case.state != "hidden":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "이의를 제기할 가려진 글·댓글이 없습니다")
     if case.appealed_at is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "이미 이의를 제기했어요. 운영진이 확인하고 있어요")
+        raise HTTPException(status.HTTP_409_CONFLICT, "이미 이의를 제기했어요. 섬지기가 확인하고 있어요")
     case.appeal_reason = body.reason
     case.appealed_at = datetime.now(timezone.utc)
     db.commit()

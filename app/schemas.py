@@ -118,13 +118,48 @@ class IslandOut(BaseModel):
     has_new_comment: bool  
 
 
+class TitleOut(BaseModel):
+    """활동으로 얻은 대표 칭호 (app/titles.py)"""
+    key: str
+    icon: str
+    name: str
+    tier: int  # 1 새싹 · 2 따뜻한 · 3 빛나는 · 4 전설
+    tier_name: str
+    desc: str
+
+
+class TitleItem(BaseModel):
+    key: str
+    icon: str
+    name: str
+    desc: str
+    tier: int
+    tier_name: str
+    earned: bool
+    progress: int
+    need: int
+    stat_label: str
+
+
+class TitlesOut(BaseModel):
+    current: TitleOut | None
+    chosen_key: str | None  # 직접 고른 대표 칭호 (없으면 가장 높은 칭호가 자동으로)
+    earned_count: int
+    items: list[TitleItem]
+
+
+class TitleChoice(BaseModel):
+    key: str | None = Field(None, max_length=30, description="비우면 가장 높은 칭호를 자동으로")
+
+
 class AuthorOut(BaseModel):
     """글·이웃에 표시되는 익명 작성자 정보. email·years는 절대 넣지 않는다."""
     user_id: int
     nickname: str
     character: str
     color: str = "original"
-    job: str | None = None 
+    job: str | None = None
+    title: TitleOut | None = None  # 활동 칭호 (상세·이웃 목록에서만 채움)
 
 
 class LatestPostOut(BaseModel):
@@ -400,3 +435,30 @@ class PrivateChatOut(BaseModel):
     messages: list[PrivateChatMessage]
     remaining: int  # 이 글에서 더 보낼 수 있는 말 수
     crisis_support: CrisisSupport | None = None
+
+
+class KeeperQuestion(BaseModel):
+    text: str
+    topic: str  # 이 질문으로 글을 쓸 때 미리 골라 둘 주제
+
+
+class KeeperWeek(BaseModel):
+    days: int
+    posts: int
+    comforts: int  # 이웃이 건넨 위로 (AI 제외)
+    ai_comforts: int  # 온도가 건넨 위로
+    thanks: int
+    visitors: int
+    top_topic: str | None
+
+
+class KeeperOut(BaseModel):
+    """섬지기(운영자 캐릭터) 안내: 인사, 이번 주의 질문, 섬 소식, 이용 원칙, 위기 안내."""
+    name: str
+    moment: str = ""  # 예: "월요일 아침"
+    greeting: str  # 요일·시간대에 맞춘 섬지기 한마디
+    question: KeeperQuestion
+    week: KeeperWeek
+    rules: list[str]
+    report_hide_threshold: int
+    crisis_support: CrisisSupport

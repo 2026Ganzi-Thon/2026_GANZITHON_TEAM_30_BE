@@ -11,10 +11,11 @@ from app.ai.search import search_similar_scored
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import Post, User
-from app.queries import blocked_user_ids, get_accessible_island, visible_comment_counts
+from app.queries import blocked_user_ids, get_accessible_island, posts_with_neighbor_comment, visible_comment_counts
 from app.ratelimit import limit_ip, limit_user
 from app.routers.islands import to_author
 from app.schemas import AuthorOut
+from app.titles import attach_titles
 
 router = APIRouter(tags=["search"])
 
@@ -43,6 +44,7 @@ class SearchItem(BaseModel):
     comment_count: int
     author: AuthorOut
     similarity: float
+    waiting: bool = False  # 아직 이웃 댓글이 없는 고민 (피드의 '답을 기다리는 고민'과 같은 기준)
 
 
 class SearchFallback(BaseModel):
@@ -71,7 +73,9 @@ def search_posts(
     island = get_accessible_island(db, island_id, me)
     hidden = blocked_user_ids(db, me.id)
     try:
-        scored = search_similar_scored(db, q.strip(), island.id, exclude_user_ids=hidden, limit=limit)
+        scored = search_similar_scored(
+            db, q.strip(), island.id, exclude_user_ids=hidden, limit=limit, title_keywords=True,
+        )
     except AIUnavailable:
         scored = []  # AI 한도 초과 등: 오류 대신 결과 없음 안내
 
@@ -85,16 +89,19 @@ def search_posts(
     posts = {p.id: p for p in db.scalars(select(Post).where(Post.id.in_(ids)))}
     authors = {u.id: u for u in db.scalars(select(User).where(User.id.in_({p.user_id for p in posts.values()})))}
     counts = visible_comment_counts(db, ids)
+    answered = posts_with_neighbor_comment(db, ids)
 
     items = [
         SearchItem(
             id=p.id, title=p.title, preview=p.content[:80], topic=p.topic, comfort_type=p.comfort_type,
             created_at=p.created_at, comment_count=counts.get(p.id, 0),
-            author=to_author(authors[p.user_id], island), similarity=round(score, 3),
+            author=to_author(authors[p.user_id], island), similarity=round(min(score, 1.0), 3),
+            waiting=p.id not in answered,
         )
         for pid, score in scored
         if (p := posts.get(pid)) is not None
     ]
+    attach_titles(db, [i.author for i in items])
     user_ids = list(dict.fromkeys(i.author.user_id for i in items if authors[i.author.user_id].deleted_at is None))
     return SearchOut(items=items, user_ids=user_ids, empty=False, fallback=None)
 

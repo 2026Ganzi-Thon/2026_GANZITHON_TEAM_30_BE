@@ -234,6 +234,22 @@ def test_similar_search_block_filter_and_empty_result():
     assert http.get("/search/keywords").json()["keywords"]
 
 
+def test_search_keyword_bonus_and_waiting_flag():
+    from app.ai.search import keyword_bonus
+
+    # 제목에 검색어 낱말이 그대로 있으면 점수를 더하고, 어미("어요")만 겹치면 더하지 않는다
+    assert keyword_bonus("이직 고민", "이직, 지금이 맞는 타이밍일까요") > 0
+    assert keyword_bonus("실수해서 혼났어요", "선배의 말투가 계속 신경 쓰여요") == 0
+    assert keyword_bonus("회의가 너무 많아", "회의가 너무 많아서 일할 시간이 없어요") <= 0.10
+
+    h, _ = user()
+    writer, _ = user()
+    pid = http.post("/posts", json=post_body(title="회의가 너무 많아서 지쳐요"), headers=writer).json()["id"]
+    r = http.get("/search", params={"q": "회의가 너무 많아", "island_id": island("개발")}, headers=h).json()
+    item = next(i for i in r["items"] if i["id"] == pid)
+    assert item["waiting"] is True and item["similarity"] <= 1.0  # '답을 기다리는 고민' 필터와 같이 써도 남는다
+
+
 # ---------- LLM 연동 (가짜 응답) ----------
 
 @pytest.fixture

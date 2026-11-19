@@ -33,7 +33,8 @@ BACKGROUND_TIMEOUT_SECONDS = float(os.getenv("AI_BACKGROUND_TIMEOUT", "15"))
 LOCAL_EMBED_DIM = 512
 
 # 유사도가 이 값보다 낮으면 "결과 없음". 제공사마다 점수 분포가 달라 기본값을 따로 둔다.
-_DEFAULT_MIN_SIMILARITY = {"upstage": 0.30, "gemini": 0.55, "local": 0.12}
+# upstage: 상관없는 검색어("날씨 좋다", "게임 추천")가 0.22 안팎, 관련 고민은 0.26 이상이라 그 사이로 둔다.
+_DEFAULT_MIN_SIMILARITY = {"upstage": 0.26, "gemini": 0.55, "local": 0.12}
 _MIN_SIMILARITY_OVERRIDE = os.getenv("SEARCH_MIN_SIMILARITY")
 SEARCH_LIMIT = int(os.getenv("SEARCH_LIMIT", "10"))
 

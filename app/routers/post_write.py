@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from app.draft_hint import DraftHint, draft_hint
 from app.ai import CRISIS_SUPPORT, CheckResult, check_text
 from app.ai.tasks import sync_post
 from app.config import COMFORT_TYPES, POST_CONTENT_MAX, POST_TITLE_MAX, TOPICS
@@ -140,6 +141,7 @@ class PostCheckOut(BaseModel):
     suggestion: str | None
     issues: list[dict]  # [{type, text, start, end, guide}] — start/end는 "제목+줄바꿈+본문" 기준 위치
     crisis: bool  # 위기 신호 (막지 않고 게시 후 상담 안내)
+    hint: DraftHint | None = None  # 내용이 부실해 보이면 '조금 더 적어 볼래요?' 안내 (막지는 않음)
 
 
 @router.post("/check", response_model=PostCheckOut, dependencies=[limit_user("post-check", 30, 600)])
@@ -153,6 +155,7 @@ def check_post(body: PostCheckIn, me: User = Depends(get_current_user)):
         suggestion=result.suggestion,
         issues=result.issues_dict(),
         crisis=result.crisis,
+        hint=draft_hint(body.title, body.content),
     )
 
 

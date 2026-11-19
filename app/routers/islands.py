@@ -23,8 +23,11 @@ from app.queries import (
     visible_comment_counts,
 )
 from app.ratelimit import limit_user
+from app.ai import CRISIS_SUPPORT
+from app.keeper import keeper_info
+from app.titles import attach_titles
 from app.schemas import (
-    AuthorOut, BottleOut, FootprintOut, FootprintsOut, IslandOut, LatestPostOut, NeighborOut, PostListOut,
+    AuthorOut, BottleOut, FootprintOut, FootprintsOut, IslandOut, KeeperOut, LatestPostOut, NeighborOut, PostListOut,
     PostSummary, PresenceIn, PresenceOut, TemperatureOut,
 )
 
@@ -99,6 +102,7 @@ def list_neighbors(island_id: int, user: User = Depends(get_current_user), db: S
     # 내 캐릭터는 글이 없어도 지도에 나와야 한다
     if user.id not in neighbors:
         neighbors[user.id] = NeighborOut(author=to_author(user, island), latest_post=None, post_count=0, is_me=True)
+    attach_titles(db, [n.author for n in neighbors.values()])
     return list(neighbors.values())
 
 
@@ -270,6 +274,13 @@ def get_temperature(island_id: int, user: User = Depends(get_current_user), db: 
     )
 
 
+@router.get("/{island_id}/keeper", response_model=KeeperOut)
+def get_keeper(island_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """섬지기(운영자 캐릭터): 인사, 이번 주의 질문, 최근 7일 섬 소식, 이용 원칙, 위기 상담 안내."""
+    island = get_accessible_island(db, island_id, user)
+    return keeper_info(db, island, CRISIS_SUPPORT)
+
+
 @router.get("/{island_id}/posts", response_model=PostListOut)
 def list_island_posts(
     island_id: int,
@@ -310,7 +321,7 @@ def list_island_posts(
 
     user_ids = db.scalars(public_posts().with_only_columns(Post.user_id).where(*conditions).distinct()).all()
 
-    return PostListOut(
+    result = PostListOut(
         posts=[
             PostSummary(
                 id=p.id,
@@ -328,3 +339,5 @@ def list_island_posts(
         user_ids=list(user_ids),
         next_before_id=posts[-1].id if has_more else None,
     )
+    attach_titles(db, [p.author for p in result.posts])
+    return result

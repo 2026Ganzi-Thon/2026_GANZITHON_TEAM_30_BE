@@ -13,6 +13,7 @@ from app.ai.tasks import follow_up_plan, reply_in_thread
 from app.config import DELETED_COMMENT, HIDDEN_COMMENT, PRIVATE_CHAT_MAX
 from app.database import get_db
 from app.deps import get_current_user
+from app.titles import attach_titles
 from app.models import Comment, Island, Notification, Post, PrivateChat, Reaction, User
 from app.queries import (
     blocked_user_ids, create_notification, get_accessible_island, posts_with_neighbor_comment, visible_comment_counts,
@@ -70,7 +71,7 @@ def get_post_detail(post_id: int, me: User = Depends(get_current_user), db: Sess
     users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(user_ids)))}
     writer = users[post.user_id]
 
-    return PostDetailOut(
+    detail = PostDetailOut(
         id=post.id,
         island_id=post.island_id,
         topic=post.topic,
@@ -88,6 +89,8 @@ def get_post_detail(post_id: int, me: User = Depends(get_current_user), db: Sess
         reacted_by_me=bool(db.scalar(select(exists().where(Reaction.post_id == post.id, Reaction.user_id == me.id)))),
         comments=[comment_out(c, users, island, me) for c in comments],
     )
+    attach_titles(db, [detail.author, *(c.author for c in detail.comments)])
+    return detail
 
 
 def comment_out(c: Comment, users: dict[int, User], island: Island, me: User) -> CommentOut:

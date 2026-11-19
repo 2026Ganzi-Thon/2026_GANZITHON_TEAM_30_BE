@@ -52,6 +52,8 @@ def upgrade_schema() -> None:
                 conn.execute(text("ALTER TABLE users ADD COLUMN accept_invites BOOLEAN NOT NULL DEFAULT TRUE"))
             if "color" not in user_cols:  # 캐릭터 색감(팔레트)
                 conn.execute(text("ALTER TABLE users ADD COLUMN color VARCHAR(20) NOT NULL DEFAULT 'original'"))
+            if "title_key" not in user_cols:  # 대표 칭호
+                conn.execute(text("ALTER TABLE users ADD COLUMN title_key VARCHAR(30)"))
         if "posts" in tables:
             post_cols = {c["name"] for c in inspect(engine).get_columns("posts")}
             for col in ("map_x", "map_y"):  # 글을 쓴 지도 위 자리

@@ -139,6 +139,63 @@ def add_follow_up_stories(db, now: datetime) -> int:
     return added
 
 
+# 활동 칭호가 골고루 보이도록, 오래 활동한 시드 이웃 셋 (이메일, 남길 위로 수, 그중 고마움 받은 수, 통합섬만)
+# neighbor16 → 🌟 섬의 등대(전설), neighbor17 → ✨ 빛나는 위로꾼, other16 → 🧭 섬의 길잡이
+VETERANS = [
+    ("neighbor16@example.com", 16, 10, False),
+    ("neighbor17@example.com", 15, 3, False),
+    ("other16@example.com", 10, 1, True),
+]
+VETERAN_LINES = [
+    "저도 비슷한 시기를 지나왔어요. 지금 느끼는 마음이 이상한 게 아니에요.",
+    "여기까지 털어놓으신 것만으로도 한 걸음 내디디신 거예요.",
+    "오늘은 스스로에게 조금 너그러워져도 괜찮아요.",
+    "저는 그럴 때 하루 일을 세 줄로 적어 보니 마음이 좀 정리됐어요.",
+    "혼자 버티지 마시고, 믿을 만한 동료 한 명에게라도 이야기해 보세요.",
+    "그 상황이면 누구라도 지쳤을 거예요. 충분히 잘하고 계세요.",
+    "작은 것 하나만 바꿔 보는 것부터 시작해 보면 어떨까요?",
+    "저도 같은 고민을 했었는데, 시간이 지나니 조금씩 나아지더라고요.",
+    "마음이 너무 무거울 땐 잠깐 산책하고 오는 것도 도움이 됐어요.",
+    "응원할게요. 다음에 어떻게 됐는지도 들려 주세요.",
+    "말씀만 들어도 얼마나 애쓰셨는지 느껴져요.",
+    "완벽하게 해내려고 하지 않으셔도 돼요. 지금도 충분해요.",
+]
+
+
+def add_veteran_activity(db, now: datetime) -> int:
+    """VETERANS가 다른 이웃의 고민에 위로를 남기고, 그중 일부가 고마움을 받은 상태로 만든다.
+    이미 목표만큼 남겼으면 건너뛴다 (여러 번 실행해도 안전)."""
+    common = db.scalar(select(Island).where(Island.type == "common"))
+    rng = random.Random(11)
+    added = 0
+    for email, target, thanked, common_only in VETERANS:
+        user = db.scalar(select(User).where(User.email == email))
+        if user is None:
+            continue
+        done = set(db.scalars(select(Comment.post_id).where(Comment.user_id == user.id)))
+        given = len(db.scalars(select(Comment.id).join(Post, Post.id == Comment.post_id).where(
+            Comment.user_id == user.id, Post.user_id != user.id)).all())
+        if given >= target:
+            continue
+        islands = [common.id] if common_only else [common.id] + list(db.scalars(
+            select(Island.id).where(Island.type == "job", Island.job == user.job)))
+        posts = db.scalars(select(Post).where(
+            Post.island_id.in_(islands), Post.user_id != user.id, Post.visibility == "public",
+            Post.status == "published", Post.id.not_in(done) if done else True,
+        ).order_by(Post.created_at.desc())).all()
+        already_thanked = len(db.scalars(select(Comment.id).where(
+            Comment.user_id == user.id, Comment.thanked_at.is_not(None))).all())
+        for i, post in enumerate(posts[: target - given]):
+            when = min(post.created_at + timedelta(minutes=rng.randint(30, 300)), now - timedelta(minutes=10))
+            comment = Comment(post_id=post.id, user_id=user.id, content=rng.choice(VETERAN_LINES), created_at=when)
+            if already_thanked < thanked:
+                comment.thanked_at = when + timedelta(hours=1)
+                already_thanked += 1
+            db.add(comment)
+            added += 1
+    return added
+
+
 def refresh_footprints(db, now: datetime) -> int:
     """시드 이웃의 발자국이 오래됐으면 최근 몇 시간 안으로 다시 찍는다 (실제 사용자 기록은 건드리지 않음)."""
     rng = random.Random(7)
@@ -218,9 +275,10 @@ def main() -> None:
             new_posts += 1
         db.flush()
         stories = add_follow_up_stories(db, now)
+        veterans = add_veteran_activity(db, now)
         footprints = refresh_footprints(db, now)
         db.commit()
-        print(f"보충 시드: 이웃 {new_users}명, 고민 {new_posts}개, 그 뒤 이야기 {stories}개, 발자국 {footprints}개")
+        print(f"보충 시드: 이웃 {new_users}명, 고민 {new_posts}개, 그 뒤 이야기 {stories}개, 칭호용 위로 {veterans}개, 발자국 {footprints}개")
 
         if new_posts:
             ok, fail = backfill_embeddings(db)  # 벡터가 없는 글만 채움

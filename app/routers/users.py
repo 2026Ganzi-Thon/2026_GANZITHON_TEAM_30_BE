@@ -8,7 +8,10 @@ from app.models import Comment, Island, Notification, Post, User
 from app.queries import blocked_user_ids, get_accessible_island, public_posts, visible_comment_counts
 from app.routers.islands import to_author
 from app.nickname import generate_unique_nickname, is_valid_nickname, nickname_taken
-from app.schemas import AuthorOut, MyCommentOut, MyPostOut, MySummaryOut, PostSummary, ProfileUpdate, UserResponse
+from app.schemas import (
+    AuthorOut, MyCommentOut, MyPostOut, MySummaryOut, PostSummary, ProfileUpdate, TitleChoice, TitlesOut, UserResponse,
+)
+from app.titles import BY_KEY, activity_stats, attach_titles, earned, my_titles
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -66,6 +69,24 @@ def get_my_summary(me: User = Depends(get_current_user), db: Session = Depends(g
             .where(*mine, Post.user_id != me.id)
         ),
     )
+
+
+@router.get("/me/titles", response_model=TitlesOut)
+def get_my_titles(me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """칭호 도감: 얻은 칭호·아직 못 얻은 칭호(진행도)와 지금 대표 칭호."""
+    return my_titles(db, me)
+
+
+@router.patch("/me/title", response_model=TitlesOut)
+def choose_title(body: TitleChoice, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """대표 칭호 고르기. key를 비우면 가장 높은 칭호가 자동으로 보인다. 얻은 칭호만 고를 수 있다."""
+    if body.key is not None:
+        title = BY_KEY.get(body.key)
+        if title is None or title not in earned(activity_stats(db, [me.id])[me.id]):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "아직 얻지 못한 칭호예요")
+    me.title_key = body.key
+    db.commit()
+    return my_titles(db, me)
 
 
 @router.get("/me/posts", response_model=list[MyPostOut])
@@ -133,7 +154,9 @@ def get_profile(
 ):
     """간단 프로필: 닉네임·캐릭터 (+통합섬이면 직무). 연차는 절대 포함하지 않는다."""
     island = get_accessible_island(db, island_id, me)
-    return to_author(get_visible_user(db, user_id, me), island)
+    author = to_author(get_visible_user(db, user_id, me), island)
+    attach_titles(db, [author])
+    return author
 
 
 @router.get("/{user_id}/posts", response_model=list[PostSummary])

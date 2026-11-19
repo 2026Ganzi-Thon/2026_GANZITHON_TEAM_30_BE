@@ -41,6 +41,8 @@ class User(Base):
     color: Mapped[str] = mapped_column(String(20), default="original", server_default="original")
     privacy_agreed_at: Mapped[datetime] = mapped_column(UTCDateTime())
     accept_invites: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    # 직접 고른 대표 칭호 (app/titles.py의 key). 비어 있으면 가장 높은 칭호를 자동으로 보여 줌
+    title_key: Mapped[str | None] = mapped_column(String(30), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
 

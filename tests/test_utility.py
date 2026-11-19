@@ -518,3 +518,87 @@ def test_one_email_start_decides_signup_or_login_and_remember_keeps_longer():
     third = http.post("/auth/start", json={"email": email}).json()
     assert http.post("/auth/email-code/verify",
                      json={"email": email, "purpose": "signup", "code": third["demo_code"]}).status_code != 204
+
+
+def test_activity_titles_grow_and_can_be_chosen():
+    author, _ = signup()
+    helper, helper_id = signup()
+    assert http.get("/users/me/titles", headers=helper).json()["current"] is None
+
+    post_id = write_post(author)
+    comment = http.post(f"/posts/{post_id}/comments", json={"content": "저도 그랬어요. 천천히 해 봐요"}, headers=helper).json()
+    titles = http.get("/users/me/titles", headers=helper).json()
+    assert titles["current"]["key"] == "sprout" and titles["earned_count"] == 1
+
+    # 글쓴이가 고마워요를 누르면 더 높은 칭호가 대표로
+    http.post(f"/posts/{post_id}/comments/{comment['id']}/thanks", headers=author)
+    detail = http.get(f"/posts/{post_id}", headers=author).json()
+    mine = next(c for c in detail["comments"] if c["id"] == comment["id"])
+    assert mine["author"]["title"]["key"] == "thanked" and mine["author"]["title"]["tier"] == 2
+    assert detail["author"]["title"]["key"] == "first_post"  # 글쓴이는 첫 고민 칭호
+
+    # 얻은 칭호만 대표로 고를 수 있고, 비우면 다시 자동
+    assert http.patch("/users/me/title", json={"key": "lighthouse"}, headers=helper).status_code == 400
+    chosen = http.patch("/users/me/title", json={"key": "sprout"}, headers=helper).json()
+    assert chosen["current"]["key"] == "sprout" and chosen["chosen_key"] == "sprout"
+    profile = http.get(f"/users/{helper_id}/profile", params={"island_id": detail["island_id"]}, headers=author).json()
+    assert profile["title"]["key"] == "sprout"
+    assert http.patch("/users/me/title", json={"key": None}, headers=helper).json()["current"]["key"] == "thanked"
+
+
+def test_island_keeper_shares_weekly_question_news_and_rules():
+    from app.config import TOPICS
+
+    design = island_id("디자인")
+    me, _ = signup(job="디자인")
+    neighbor, _ = signup(job="디자인")
+    before = http.get(f"/islands/{design}/keeper", headers=me).json()["week"]
+
+    post_id = write_post(me, island_id=design, title="시안 피드백이 무서워요", content=_unique_text())
+    http.post(f"/posts/{post_id}/comments", json={"content": "저도 그랬어요. 천천히 해요"}, headers=neighbor)
+    keeper = http.get(f"/islands/{design}/keeper", headers=me).json()
+
+    assert keeper["name"] == "섬지기" and keeper["greeting"] and keeper["moment"].split()[0].endswith("요일")
+    assert keeper["question"]["text"] and keeper["question"]["topic"] in TOPICS
+    assert keeper["week"]["posts"] == before["posts"] + 1
+    assert keeper["week"]["comforts"] == before["comforts"] + 1
+    assert any(str(keeper["report_hide_threshold"]) in rule for rule in keeper["rules"])
+    assert {"109", "1577-0199"} <= {r["phone"] for r in keeper["crisis_support"]["resources"]}
+    # 다른 직무섬의 섬지기는 볼 수 없다
+    assert http.get(f"/islands/{island_id('영업')}/keeper", headers=me).status_code in (403, 404)
+
+
+def test_keeper_line_follows_weekday_and_time():
+    from datetime import datetime
+
+    from app.keeper_lines import LINES, keeper_line
+
+    # 모든 요일 × 시간대 칸에 문구가 3개 이상 있다
+    assert len(LINES) == 28 and min(len(v) for v in LINES.values()) >= 3
+    assert keeper_line(datetime(2026, 11, 16, 8))[0] == "월요일 아침"  # 2026-11-16은 월요일
+    assert keeper_line(datetime(2026, 11, 20, 19))[0] == "금요일 저녁"
+    # 월요일 새벽 1시는 아직 '일요일 밤' (출근 걱정에 뒤척이는 시간)
+    moment, line = keeper_line(datetime(2026, 11, 23, 1))
+    assert moment == "일요일 밤" and line in LINES[(6, "night")]
+    # 같은 시각엔 같은 문구, 시간이 바뀌면 같은 칸 안에서 다른 문구로 돈다
+    assert keeper_line(datetime(2026, 11, 17, 8, 5)) == keeper_line(datetime(2026, 11, 17, 8, 50))
+    assert keeper_line(datetime(2026, 11, 17, 8))[1] != keeper_line(datetime(2026, 11, 17, 9))[1]
+
+
+def test_post_check_suggests_more_detail_for_thin_posts():
+    from app.draft_hint import draft_hint
+
+    assert draft_hint("팀장님이랑 안 맞아요", "팀장님이랑 안 맞아요").reason == "same_as_title"
+    assert draft_hint("힘들어요", "ㅠㅠㅠㅠㅠㅠ").reason == "noise"
+    assert draft_hint("힘들어요", "아아아아아아아아 진짜").reason == "noise"
+    assert draft_hint("퇴사하고 싶어요", "너무 힘들어요").reason == "short"
+    # 상황이 담긴 글, 끝에 ㅠㅠ가 조금 붙은 글은 권하지 않는다
+    assert draft_hint("팀장님과 자꾸 부딪혀요", "회의 때마다 제 의견을 끝까지 안 듣고 말을 끊으세요.") is None
+    assert draft_hint("번아웃", "요즘 아무것도 하기 싫고 주말에도 누워만 있어요ㅠㅠ") is None
+
+    me, _ = signup()
+    thin = http.post("/posts/check", json={"title": "퇴사하고 싶어요", "content": "너무 힘들어요"}, headers=me).json()
+    assert thin["hint"]["reason"] == "short" and thin["hint"]["tips"] and thin["hint"]["min_length"] == 20
+    full = http.post("/posts/check", json={"title": "팀장님과 자꾸 부딪혀요",
+                                           "content": "회의 때마다 제 의견을 끝까지 안 듣고 말을 끊으세요."}, headers=me).json()
+    assert full["hint"] is None
