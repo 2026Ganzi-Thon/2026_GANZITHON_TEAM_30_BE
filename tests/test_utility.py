@@ -563,7 +563,8 @@ def test_island_keeper_shares_weekly_question_news_and_rules():
     assert keeper["question"]["text"] and keeper["question"]["topic"] in TOPICS
     assert keeper["week"]["posts"] == before["posts"] + 1
     assert keeper["week"]["comforts"] == before["comforts"] + 1
-    assert any(str(keeper["report_hide_threshold"]) in rule for rule in keeper["rules"])
+    # 신고 몇 번이면 가려지는지는 화면에 보여주지 않음 (악용 방지)
+    assert not any(f"{keeper['report_hide_threshold']}번" in rule for rule in keeper["rules"])
     assert {"109", "1577-0199"} <= {r["phone"] for r in keeper["crisis_support"]["resources"]}
     # 다른 직무섬의 섬지기는 볼 수 없다
     assert http.get(f"/islands/{island_id('영업')}/keeper", headers=me).status_code in (403, 404)
