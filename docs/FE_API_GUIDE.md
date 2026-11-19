@@ -40,7 +40,7 @@
 | API | 내용 |
 |---|---|
 | `GET /islands` | `[{id, type:"common"/"job", name, is_mine, post_count, has_new_comment}]` |
-| `GET /islands/{id}/posts?comfort_type=&q=&limit=&before_id=&waiting=` | `{posts, user_ids, next_before_id}`. `next_before_id`가 `null`이면 끝. `waiting=true`면 아직 이웃 댓글이 없는 고민만. 각 글의 `waiting: true`면 "답을 기다리는 고민" 배지 |
+| `GET /islands/{id}/posts?comfort_type=&category=&q=&limit=&before_id=&waiting=` | `{posts, user_ids, next_before_id}`. `next_before_id`가 `null`이면 끝. `waiting=true`면 아직 이웃 댓글이 없는 고민만. `category`는 고민 주제 대분류(`업무·직장생활`/`진로·성장`/`감정·마음`/`관계·일상`, 여러 개 가능). 각 글의 `waiting: true`면 "답을 기다리는 고민" 배지 |
 | `GET /islands/{id}/neighbors` | `[{author, latest_post, post_count, is_me}]` |
 | `GET /users/{user_id}/profile?island_id=` · `/users/{user_id}/posts?island_id=` | 이웃 프로필 · 이웃의 공개 고민 |
 

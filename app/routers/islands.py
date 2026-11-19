@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app import presence
-from app.config import COMFORT_TYPES, FOOTPRINT_HOURS, ISLAND_COUNT_DAYS, LEFT_CHARACTER, LEFT_NICKNAME
+from app.config import COMFORT_TYPES, FOOTPRINT_HOURS, TOPIC_CATEGORIES, ISLAND_COUNT_DAYS, LEFT_CHARACTER, LEFT_NICKNAME
 from app.database import get_db
 from app.deps import get_current_user
 from app.insights import bubble_groups, daily_window
@@ -349,10 +349,11 @@ def list_island_posts(
     limit: int = Query(20, ge=1, le=50),
     before_id: int | None = Query(None, description="더 보기: 이전 응답의 next_before_id"),
     waiting: bool = Query(False, description="true면 아직 이웃 댓글이 없는 고민만"),
+    category: list[str] | None = Query(None, description=f"고민 주제(대분류) 필터: {list(TOPIC_CATEGORIES)}"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """최근 고민 목록(업로드순). 위로 방식 필터와 검색어를 함께 적용할 수 있다."""
+    """최근 고민 목록(업로드순). 위로 방식·고민 주제 필터와 검색어를 함께 적용할 수 있다."""
     island = get_accessible_island(db, island_id, user)
     hidden = blocked_user_ids(db, user.id)
 
@@ -365,6 +366,10 @@ def list_island_posts(
         conditions.append(keyword_filter(q))
     if waiting:
         conditions.append(~neighbor_comment_exists())
+    if category:
+        if any(c not in TOPIC_CATEGORIES for c in category):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"고민 주제는 {list(TOPIC_CATEGORIES)} 중 하나여야 합니다")
+        conditions.append(Post.topic.in_([t for c in category for t in TOPIC_CATEGORIES[c]]))
 
     stmt = public_posts().where(*conditions)
     if before_id is not None:

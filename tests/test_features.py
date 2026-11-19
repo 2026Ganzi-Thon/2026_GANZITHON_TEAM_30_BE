@@ -135,3 +135,21 @@ def test_comment_with_bad_words_is_rejected_with_code():
     r = http.post(f"/posts/{post_id}/comments", json={"content": "시발 그냥 참아"}, headers=author)
     assert r.status_code == 422
     assert r.json()["code"] == "NEED_EDIT"
+
+
+def test_island_posts_filter_by_topic_category():
+    """고민 필터의 '고민 주제'(대분류)로 목록을 거른다: 고른 대분류의 소분류 글만 나온다."""
+    author, _ = signup()
+    work = write_post(author, topic="업무량·스트레스", title="회의가 너무 많아서 힘들어요",
+                      content="하루에 회의가 다섯 개라 정작 일을 못 해서 늘 늦게 퇴근해요.")
+    life = write_post(author, topic="건강·생활습관", title="잠들기 전까지 휴대폰을 봐요",
+                      content="자기 전에 휴대폰을 오래 봐서 아침마다 너무 피곤하고 지쳐요.")
+    url = f"/islands/{island_id()}/posts?limit=50"
+
+    ids = [p["id"] for p in http.get(url + "&category=업무·직장생활", headers=author).json()["posts"]]
+    assert work in ids and life not in ids
+
+    ids = [p["id"] for p in http.get(url + "&category=업무·직장생활&category=관계·일상", headers=author).json()["posts"]]
+    assert work in ids and life in ids
+
+    assert http.get(url + "&category=없는주제", headers=author).status_code == 422
