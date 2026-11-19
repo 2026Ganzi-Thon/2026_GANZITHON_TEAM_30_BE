@@ -57,6 +57,8 @@ class PostCreate(BaseModel):
     comfort_type: str
     visibility: Visibility = "public"
     show_years: bool = False  # 연차 공개 여부 (가입 때 연차를 안 넣었으면 무시)
+    map_x: float | None = Field(default=None, ge=0, le=100, description="글을 쓴 지도 위 가로 위치(%)")
+    map_y: float | None = Field(default=None, ge=0, le=100, description="글을 쓴 지도 위 세로 위치(%)")
 
     _title = field_validator("title")(lambda v: _strip_required(v, "제목"))
     _content = field_validator("content")(lambda v: _strip_required(v, "내용"))
@@ -179,6 +181,8 @@ def create_post(
         visibility=body.visibility,
         show_years=body.show_years and me.years is not None,
         status="published",
+        map_x=body.map_x,
+        map_y=body.map_y,
     )
     db.add(post)
     db.commit()

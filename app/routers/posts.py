@@ -4,21 +4,24 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 from app.ai import CRISIS_SUPPORT, check_text
+from app.ai.check import has_crisis_signal
+from app.ai.comment import write_private_reply
 from app.ai.client import AIUnavailable
 from app.ai.embedding import post_text
 from app.ai.search import search_similar_scored
 from app.ai.tasks import follow_up_plan, reply_in_thread
-from app.config import DELETED_COMMENT, HIDDEN_COMMENT
+from app.config import DELETED_COMMENT, HIDDEN_COMMENT, PRIVATE_CHAT_MAX
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Comment, Island, Notification, Post, Reaction, User
+from app.models import Comment, Island, Notification, Post, PrivateChat, Reaction, User
 from app.queries import (
     blocked_user_ids, create_notification, get_accessible_island, posts_with_neighbor_comment, visible_comment_counts,
 )
 from app.ratelimit import limit_user
 from app.routers.islands import to_author
 from app.schemas import (
-    CommentCreate, CommentCreateOut, CommentOut, PostDetailOut, ReactionOut, SimilarPostOut, ThanksOut,
+    CommentCreate, CommentCreateOut, CommentOut, PostDetailOut, PrivateChatIn, PrivateChatMessage, PrivateChatOut,
+    ReactionOut, SimilarPostOut, ThanksOut,
 )
 
 router = APIRouter(prefix="/posts", tags=["posts"])
@@ -284,3 +287,62 @@ def similar_posts(post_id: int, me: User = Depends(get_current_user), db: Sessio
         for pid, score in picked
         if (p := posts.get(pid)) is not None
     ]
+
+
+# ---------- 나만 보기 고민: 온도와 둘만의 대화 ----------
+
+def my_private_post(db: Session, post_id: int, me: User) -> Post:
+    post = db.get(Post, post_id)
+    if post is None or post.user_id != me.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "고민글을 찾을 수 없습니다.")
+    if post.visibility != "private":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "나만 보기 고민에서만 온도와 따로 이야기할 수 있어요")
+    return post
+
+
+def private_chat_out(db: Session, post: Post, crisis: bool = False) -> PrivateChatOut:
+    messages = db.scalars(select(PrivateChat).where(PrivateChat.post_id == post.id).order_by(PrivateChat.id)).all()
+    sent = sum(not m.is_ai for m in messages)
+    return PrivateChatOut(
+        messages=[PrivateChatMessage(id=m.id, is_ai=m.is_ai, content=m.content, created_at=m.created_at) for m in messages],
+        remaining=max(PRIVATE_CHAT_MAX - sent, 0),
+        crisis_support=CRISIS_SUPPORT if crisis else None,
+    )
+
+
+@router.get("/{post_id}/ai-chat", response_model=PrivateChatOut)
+def get_private_chat(post_id: int, me: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """나만 보기 고민에서 온도와 나눈 대화. 작성자만 볼 수 있다."""
+    return private_chat_out(db, my_private_post(db, post_id, me))
+
+
+@router.post("/{post_id}/ai-chat", response_model=PrivateChatOut, dependencies=[limit_user("ai_chat", 12, 60)])
+def talk_private_chat(
+    post_id: int, body: PrivateChatIn, me: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    """나만 보기 고민에서 온도에게 말을 건다. content를 비우면 (대화가 비어 있을 때만) 온도가 먼저 말을 건넨다.
+    나만 보기 글은 게시 전 검사를 하지 않으므로, 위기 신호만 규칙으로 살펴서 상담 안내를 붙인다."""
+    post = my_private_post(db, post_id, me)
+    history = db.scalars(select(PrivateChat).where(PrivateChat.post_id == post.id).order_by(PrivateChat.id)).all()
+    content = (body.content or "").strip()
+
+    if not content:
+        if history:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "온도에게 건넬 말을 적어 주세요")
+        crisis = has_crisis_signal(f"{post.title}\n{post.content}")
+    else:
+        if sum(not m.is_ai for m in history) >= PRIVATE_CHAT_MAX:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "이 고민에서 나눌 수 있는 대화를 모두 나눴어요. 새 고민으로 이어 가 주세요"
+            )
+        crisis = has_crisis_signal(content)
+        db.add(PrivateChat(post_id=post.id, is_ai=False, content=content))
+        db.commit()  # AI 답을 기다리는 동안 DB를 잡고 있지 않게 먼저 저장
+
+    thread = [("온도" if m.is_ai else "작성자", m.content) for m in history[-12:]]
+    if content:
+        thread.append(("작성자", content))
+    reply = write_private_reply(post, thread, crisis=crisis)
+    db.add(PrivateChat(post_id=post.id, is_ai=True, content=reply))
+    db.commit()
+    return private_chat_out(db, post, crisis)

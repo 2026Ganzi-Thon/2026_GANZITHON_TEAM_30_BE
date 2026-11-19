@@ -19,6 +19,8 @@ from app.schemas import (
     SignupResponse,
     EmailCodeVerify,
     SignupRequest,
+    StartOut,
+    StartRequest,
     TokenResponse,
     UserResponse,
 )
@@ -55,10 +57,23 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_409_CONFLICT, "이미 가입된 이메일입니다. 로그인해 주세요")
     if body.purpose == "login" and user_id is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "가입하지 않은 이메일입니다. 회원가입을 먼저 해 주세요")
+    return send_code(db, email, body.purpose)
 
+
+@router.post("/start", response_model=StartOut, dependencies=[limit_ip("email-code", 5, 600)])
+def start_with_email(body: StartRequest, db: Session = Depends(get_db)):
+    """이메일 하나로 시작: 가입한 적이 있으면 로그인 코드를, 처음이면 가입 코드를 보낸다.
+    FE는 is_new를 보고 코드 입력 뒤 바로 로그인하거나, 직무·캐릭터 고르기로 넘어간다."""
+    email = body.email.lower()
+    user_id = db.scalar(select(User.id).where(User.email == email, User.deleted_at.is_(None)))
+    sent = send_code(db, email, "signup" if user_id is None else "login")
+    return StartOut(**sent.model_dump(), is_new=user_id is None)
+
+
+def send_code(db: Session, email: str, purpose: str) -> EmailCodeOut:
     demo_account = email in config.DEMO_CODE_EMAILS or email.rsplit("@", 1)[-1] in config.DEMO_CODE_DOMAINS
     reveal = demo_account or (
-        config.EMAIL_MODE == "demo" and (config.ENV != "production" or body.purpose == "signup")
+        config.EMAIL_MODE == "demo" and (config.ENV != "production" or purpose == "signup")
     )
     if config.EMAIL_MODE == "demo" and not reveal:
         raise HTTPException(
@@ -66,10 +81,10 @@ def request_email_code(body: EmailCodeRequest, db: Session = Depends(get_db)):
             {"code": "EMAIL_UNAVAILABLE", "message": "지금은 인증 메일을 보낼 수 없어요. 가입한 기기에서는 로그인 상태가 유지돼요"},
         )
 
-    code = issue_code(db, email, body.purpose)
+    code = issue_code(db, email, purpose)
     if config.EMAIL_MODE == "smtp" and not demo_account:
         try:
-            send_code_email(email, code, body.purpose)
+            send_code_email(email, code, purpose)
         except Exception:  # SMTP 연결·인증 실패 등: 코드를 저장하지 않고 알려 준다
             db.rollback()
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, "인증 메일을 보내지 못했어요. 잠시 뒤 다시 시도해 주세요")
@@ -128,7 +143,7 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_409_CONFLICT, "이메일 또는 닉네임이 이미 사용 중입니다")
     db.refresh(user)
     profile = UserResponse.model_validate(user).model_dump()
-    return SignupResponse(**profile, access_token=create_access_token(user.id))
+    return SignupResponse(**profile, access_token=create_access_token(user.id, body.remember))
 
 
 @router.post("/login", response_model=TokenResponse, dependencies=[limit_ip("auth", 20, 600)])
@@ -139,7 +154,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "가입한 회사 이메일을 확인해 주세요")
     mark_used(verify_code(db, user.email, "login", body.code))
     db.commit()
-    return TokenResponse(access_token=create_access_token(user.id))
+    return TokenResponse(access_token=create_access_token(user.id, body.remember))
 
 @router.delete("/me", status_code= status.HTTP_204_NO_CONTENT)
 def withdraw(payload: dict = Depends(get_token_payload),

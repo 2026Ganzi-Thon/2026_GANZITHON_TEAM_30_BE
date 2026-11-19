@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from app.config import CHARACTERS, COMMENT_MAX, JOBS, YEARS
+from app.config import CHARACTER_COLORS, CHARACTERS, COMMENT_MAX, JOBS, YEARS
 
 class SignupRequest(BaseModel):
     email: EmailStr  # 회사 이메일: 형식 검사 + 이메일 인증코드로 본인 확인 (비밀번호 없음)
@@ -10,7 +10,8 @@ class SignupRequest(BaseModel):
     years: str | None = None  
     character: str  
     nickname: str | None = Field(default=None, max_length=30, description="비우면 서버가 자동 생성. 예) 포근한 호랑이 4821")
-    agree_privacy: bool 
+    agree_privacy: bool
+    remember: bool = False  # "로그인 유지": 토큰을 30일 동안 유효하게
 
     @field_validator("job")
     @classmethod
@@ -49,6 +50,7 @@ class ProfileUpdate(BaseModel):
     character: str | None = None
     nickname: str | None = Field(default=None, max_length=30, description="GET /auth/nickname으로 추천받은 값")
     accept_invites: bool | None = None
+    color: str | None = None
 
     @field_validator("character")
     @classmethod
@@ -57,10 +59,18 @@ class ProfileUpdate(BaseModel):
             raise ValueError(f"캐릭터는 {list(CHARACTERS)} 중 하나여야 합니다")
         return v
 
+    @field_validator("color")
+    @classmethod
+    def color_must_exist(cls, v: str | None) -> str | None:
+        if v is not None and v not in CHARACTER_COLORS:
+            raise ValueError(f"색감은 {list(CHARACTER_COLORS)} 중 하나여야 합니다")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
     code: str = Field(pattern=r"^\d{6}$", description="이메일로 받은 6자리 인증코드")
+    remember: bool = False  # "로그인 유지": 토큰을 30일 동안 유효하게
 
 
 class EmailCodeRequest(BaseModel):
@@ -78,6 +88,15 @@ class EmailCodeOut(BaseModel):
     expires_in: int  # 코드 유효 시간(초)
     resend_after: int  # 다시 받기까지 기다릴 시간(초)
     demo_code: str | None = None  # EMAIL_MODE=demo일 때만. FE는 "체험용 인증코드: 123456"으로 표시
+
+
+class StartRequest(BaseModel):
+    """가입·로그인을 나누지 않고 이메일 하나로 시작한다"""
+    email: EmailStr
+
+
+class StartOut(EmailCodeOut):
+    is_new: bool  # true면 처음 온 사람 → 코드 확인 뒤 직무·캐릭터를 고르고 /auth/signup, false면 /auth/login
 
 
 class TokenResponse(BaseModel):
@@ -104,6 +123,7 @@ class AuthorOut(BaseModel):
     user_id: int
     nickname: str
     character: str
+    color: str = "original"
     job: str | None = None 
 
 
@@ -111,6 +131,60 @@ class LatestPostOut(BaseModel):
     id: int
     title: str
     created_at: datetime
+    map_x: float | None = None  # 글을 쓴 지도 위 자리(%). 없으면 FE가 자리를 정한다
+    map_y: float | None = None
+
+
+class PresenceIn(BaseModel):
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+
+
+class PresenceOut(BaseModel):
+    """지금 섬에 접속해 돌아다니는 이웃"""
+    author: AuthorOut
+    x: float
+    y: float
+
+
+class TemperatureOut(BaseModel):
+    """섬 온도: 최근 고민 글과 위로 댓글이 많을수록 올라간다 (36.5°가 목표)"""
+    temperature: float
+    level: Literal["cold", "mild", "warm", "hot"]
+    posts: int
+    comments: int
+    days: int
+    online: int = 0  # 지금 이 섬을 돌아다니는 사람 수 (섬 선택 화면용)
+
+
+class FootprintOut(BaseModel):
+    """최근 섬에 다녀간 이웃의 발자국. x·y가 없으면 FE가 그 이웃의 자리에 찍는다"""
+    user_id: int
+    character: str
+    x: float | None = None
+    y: float | None = None
+    hours_ago: float
+
+
+class FootprintsOut(BaseModel):
+    visitors: int  # 최근 FOOTPRINT_HOURS 동안 다녀간 이웃 수 (나 제외)
+    hours: int
+    footprints: list[FootprintOut]
+
+
+class BottleOut(BaseModel):
+    """유리병 편지: 다른 섬(또는 예전)에 남겨진 고민 하나와, 그 뒤 글쓴이가 덧붙인 이야기"""
+    post_id: int
+    island_id: int
+    island_name: str
+    topic: str
+    title: str
+    content: str
+    comfort_type: str
+    created_at: datetime
+    author: AuthorOut
+    follow_up: str | None = None
+    comment_count: int
 
 
 class NeighborOut(BaseModel):
@@ -147,6 +221,7 @@ class UserResponse(BaseModel):
     years: str | None
     nickname: str
     character: str
+    color: str = "original"
     accept_invites: bool = True
 
 
@@ -307,3 +382,21 @@ class AppealCreate(BaseModel):
         if not v:
             raise ValueError("이의 제기 사유를 입력해 주세요")
         return v
+
+
+class PrivateChatIn(BaseModel):
+    """비우면 온도가 먼저 말을 건다 (대화가 비어 있을 때만)"""
+    content: str | None = Field(default=None, max_length=500)
+
+
+class PrivateChatMessage(BaseModel):
+    id: int
+    is_ai: bool
+    content: str
+    created_at: datetime
+
+
+class PrivateChatOut(BaseModel):
+    messages: list[PrivateChatMessage]
+    remaining: int  # 이 글에서 더 보낼 수 있는 말 수
+    crisis_support: CrisisSupport | None = None

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, TypeDecorator, UniqueConstraint, true
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, TypeDecorator, UniqueConstraint, true
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
@@ -38,6 +38,7 @@ class User(Base):
     years: Mapped[str | None] = mapped_column(String(20), nullable=True) 
     nickname: Mapped[str] = mapped_column(String(50), unique=True) 
     character: Mapped[str] = mapped_column(String(30)) 
+    color: Mapped[str] = mapped_column(String(20), default="original", server_default="original")
     privacy_agreed_at: Mapped[datetime] = mapped_column(UTCDateTime())
     accept_invites: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
@@ -75,6 +76,9 @@ class Post(Base):
     visibility: Mapped[str] = mapped_column(String(10), default="public")  
     show_years: Mapped[bool] = mapped_column(Boolean, default=False)  
     status: Mapped[str] = mapped_column(String(10), default="pending")  
+    # 글을 쓴 지도 위 자리(%). 이 자리에 글쓴이 캐릭터와 글이 놓인다
+    map_x: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    map_y: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, index=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, onupdate=_now)
 
@@ -175,4 +179,31 @@ class EmailCode(Base):
     attempts: Mapped[int] = mapped_column(default=0)  # 틀린 횟수
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime())
     used_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)
+
+
+class IslandVisit(Base):
+    """섬에 다녀간 기록 (발자국). 한 사람·한 섬당 한 줄만 두고, 마지막으로 머문 자리와 시각을 덮어쓴다."""
+
+    __tablename__ = "island_visits"
+    __table_args__ = (UniqueConstraint("user_id", "island_id", name="uq_island_visit"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    island_id: Mapped[int] = mapped_column(ForeignKey("islands.id"), index=True)
+    x: Mapped[float] = mapped_column(Float)
+    y: Mapped[float] = mapped_column(Float)
+    visited_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, index=True)
+
+
+class PrivateChat(Base):
+    """나만 보기 고민에서 작성자와 AI 이웃 '온도'가 나눈 대화. 작성자 말고는 아무도 볼 수 없다.
+    댓글(comments)과 따로 두어, 나중에 글을 공개로 바꿔도 이 대화는 이웃에게 보이지 않는다."""
+
+    __tablename__ = "private_chats"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"), index=True)
+    is_ai: Mapped[bool] = mapped_column(Boolean, default=False)
+    content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now)

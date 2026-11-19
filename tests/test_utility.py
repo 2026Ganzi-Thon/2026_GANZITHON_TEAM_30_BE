@@ -325,3 +325,196 @@ def test_unread_count_skips_notifications_for_posts_i_can_no_longer_see():
     assert after["unread_count"] == before["unread_count"] - sum(
         1 for n in before["notifications"] if n["post_id"] == post_id and not n["is_read"]
     )
+
+
+def test_character_color_is_saved_and_shown_to_neighbors():
+    headers, _ = signup()
+    me = http.get("/auth/me", headers=headers).json()
+    assert me["color"] == "original"
+
+    nickname = me["nickname"]
+    r = http.patch("/users/me", json={"color": "ocean"}, headers=headers)
+    assert r.status_code == 200 and r.json()["color"] == "ocean"
+    assert r.json()["nickname"] == nickname  # 색만 바꾸면 닉네임은 그대로
+
+    assert http.patch("/users/me", json={"color": "#ff0000"}, headers=headers).status_code == 422
+
+    post_id = write_post(headers)
+    viewer, _ = signup()
+    assert http.get(f"/posts/{post_id}", headers=viewer).json()["author"]["color"] == "ocean"
+
+
+def test_post_keeps_the_map_spot_where_it_was_written():
+    headers, me_id = signup(job="디자인")
+    design = island_id("디자인")
+    write_post(headers, island_id=design, map_x=42.5, map_y=61)
+    mine = next(n for n in http.get(f"/islands/{design}/neighbors", headers=headers).json() if n["is_me"])
+    assert (mine["latest_post"]["map_x"], mine["latest_post"]["map_y"]) == (42.5, 61)
+
+    r = http.post("/posts", headers=headers, json={
+        "island_id": design, "topic": "업무량·스트레스", "title": "제목", "content": "내용",
+        "comfort_type": "empathy", "map_x": 120,
+    })
+    assert r.status_code == 422
+
+
+def test_neighbors_walking_on_the_same_island_see_each_other():
+    marketing = island_id("영업")
+    a, a_id = signup(job="영업")
+    b, b_id = signup(job="영업")
+    outsider, _ = signup(job="개발")
+
+    assert http.post(f"/islands/{marketing}/presence", json={"x": 10, "y": 20}, headers=a).json() == []
+    seen = http.post(f"/islands/{marketing}/presence", json={"x": 50, "y": 50}, headers=b).json()
+    assert [(p["author"]["user_id"], p["x"], p["y"]) for p in seen] == [(a_id, 10, 20)]
+    assert "email" not in str(seen)
+
+    # 다른 직무섬에는 들어갈 수 없다
+    assert http.post(f"/islands/{marketing}/presence", json={"x": 1, "y": 1}, headers=outsider).status_code == 403
+
+    # 차단하면 서로 안 보인다
+    assert http.post("/blocks", json={"user_id": b_id}, headers=a).status_code == 204
+    assert http.post(f"/islands/{marketing}/presence", json={"x": 10, "y": 20}, headers=a).json() == []
+
+
+def test_island_temperature_rises_with_posts_and_comments():
+    headers, _ = signup(job="영업")
+    sales = island_id("영업")
+    before = http.get(f"/islands/{sales}/temperature", headers=headers).json()
+    post_id = write_post(headers, island_id=sales, title="실적 압박", content=_unique_text())
+    neighbor, _ = signup(job="영업")
+    http.post(f"/posts/{post_id}/comments", json={"content": "저도 그랬어요. 힘내요"}, headers=neighbor)
+    after = http.get(f"/islands/{sales}/temperature", headers=headers).json()
+
+    assert after["posts"] == before["posts"] + 1
+    assert after["comments"] > before["comments"]
+    assert after["temperature"] > before["temperature"]
+    assert after["level"] in {"cold", "mild", "warm", "hot"}
+
+    http.post(f"/islands/{sales}/presence", json={"x": 50, "y": 50}, headers=neighbor)
+    assert http.get(f"/islands/{sales}/temperature", headers=headers).json()["online"] >= 1
+
+
+def test_already_masked_tokens_do_not_block_the_post():
+    from app.ai.check import _llm_issues
+
+    masked = "제 번호 [전화번호]로 연락이 와요"
+    assert _llm_issues({"spans": ["[전화번호]"]}, "PERSONAL_INFO", masked, "guide") == []
+    assert _llm_issues({"spans": []}, "PERSONAL_INFO", masked, "guide") == []
+    # 가린 표현이 없는데 AI가 위치 없이 짚으면 여전히 막는다
+    assert len(_llm_issues({"spans": []}, "PERSONAL_INFO", "회사 얘기", "guide")) == 1
+    found = _llm_issues({"spans": ["김철수"]}, "PERSONAL_INFO", "김철수 팀장이", "guide")
+    assert (found[0].text, found[0].start, found[0].end) == ("김철수", 0, 3)
+
+
+def test_footprints_show_neighbors_who_visited_today():
+    design = island_id("디자인")
+    me, _ = signup(job="디자인")
+    walker, walker_id = signup(job="디자인")
+    writer, writer_id = signup(job="디자인")
+
+    http.post(f"/islands/{design}/presence", json={"x": 30, "y": 40}, headers=walker)
+    write_post(writer, island_id=design, title="시안이 계속 반려돼요", content=_unique_text())
+
+    seen = http.get(f"/islands/{design}/footprints", headers=me).json()
+    marks = {f["user_id"]: f for f in seen["footprints"]}
+    assert walker_id in marks and (marks[walker_id]["x"], marks[walker_id]["y"]) == (30, 40)
+    assert writer_id in marks and marks[writer_id]["x"] is None  # 글만 쓴 이웃은 FE가 그 자리에 찍음
+    assert seen["visitors"] >= 2 and "email" not in str(seen)
+
+    # 차단한 이웃의 발자국은 안 보인다
+    assert http.post("/blocks", json={"user_id": walker_id}, headers=me).status_code == 204
+    assert walker_id not in {f["user_id"] for f in http.get(f"/islands/{design}/footprints", headers=me).json()["footprints"]}
+
+
+def test_bottle_brings_a_worry_from_the_other_island_with_its_story():
+    design = island_id("디자인")
+    common = island_id(None)
+    me, _ = signup(job="디자인")
+    writer, _ = signup(job="영업")
+    post_id = write_post(writer, island_id=common, title="이직 고민이 길어져요", content=_unique_text())
+    root = first_ai_comment(writer, post_id)
+    _reply(writer, post_id, root["id"], "한 달 지나서 결국 남기로 했어요. 마음이 편해졌어요")
+
+    bottles = [http.get(f"/islands/{design}/bottle", headers=me).json() for _ in range(15)]
+    assert all(b["island_id"] == common for b in bottles)  # 직무섬에선 통합섬 고민이 떠내려온다
+    mine = [b for b in bottles if b["post_id"] == post_id]
+    if mine:
+        assert mine[0]["follow_up"] == "한 달 지나서 결국 남기로 했어요. 마음이 편해졌어요"
+
+    # 열어 본 편지는 skip으로 넘기면 다시 안 나온다
+    again = http.get(f"/islands/{design}/bottle", params={"skip": [b["post_id"] for b in bottles]}, headers=me)
+    assert again.status_code in (200, 404)
+    if again.status_code == 200:
+        assert again.json()["post_id"] not in {b["post_id"] for b in bottles}
+
+    # 내 글은 유리병으로 오지 않는다
+    assert all(b["post_id"] != post_id for b in (http.get(f"/islands/{common}/bottle", headers=writer).json(),))
+
+
+def test_private_worry_can_talk_with_ai_only_for_the_author(monkeypatch):
+    monkeypatch.setattr(config, "PRIVATE_CHAT_MAX", 2)
+    from app.routers import posts as posts_router
+    monkeypatch.setattr(posts_router, "PRIVATE_CHAT_MAX", 2)
+
+    me, _ = signup()
+    other, _ = signup()
+    post_id = write_post(me, visibility="private", title="아무한테도 못 한 이야기", content=_unique_text())
+
+    opening = http.post(f"/posts/{post_id}/ai-chat", json={}, headers=me)
+    assert opening.status_code == 200, opening.text
+    assert [m["is_ai"] for m in opening.json()["messages"]] == [True]
+
+    talk = http.post(f"/posts/{post_id}/ai-chat", json={"content": "사실 요즘 잠도 잘 못 자요"}, headers=me).json()
+    assert [m["is_ai"] for m in talk["messages"]] == [True, False, True]
+    assert talk["remaining"] == 1
+
+    # 다른 사람은 대화를 볼 수도, 말을 걸 수도 없다
+    assert http.get(f"/posts/{post_id}/ai-chat", headers=other).status_code == 404
+    assert http.post(f"/posts/{post_id}/ai-chat", json={"content": "안녕"}, headers=other).status_code == 404
+
+    # 위기 신호가 있으면 상담 안내가 같이 온다
+    crisis = http.post(f"/posts/{post_id}/ai-chat", json={"content": "그냥 죽고 싶어요"}, headers=me).json()
+    assert crisis["crisis_support"] is not None and crisis["remaining"] == 0
+    assert http.post(f"/posts/{post_id}/ai-chat", json={"content": "한 번 더"}, headers=me).status_code == 400
+
+    # 공개 글에서는 쓸 수 없고, 공개로 바꿔도 대화는 댓글로 새지 않는다
+    assert http.patch(f"/posts/{post_id}", json={"visibility": "public"}, headers=me).status_code == 200
+    assert http.get(f"/posts/{post_id}/ai-chat", headers=me).status_code == 400
+    assert "잠도 잘 못 자요" not in str(post_detail(other, post_id))
+
+
+def test_one_email_start_decides_signup_or_login_and_remember_keeps_longer():
+    import jwt
+    from app.config import JWT_ALGORITHM, SECRET_KEY
+
+    def days_left(token: str) -> float:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        return (payload["exp"] - payload["iat"]) / 86400
+
+    import uuid
+    email = f"starter{uuid.uuid4().hex[:8]}@ondo-test.com"
+
+    # 처음 온 이메일 → 가입 코드, 직무·캐릭터를 고른 뒤 가입
+    first_r = http.post("/auth/start", json={"email": email})
+    assert first_r.status_code == 200, first_r.text
+    first = first_r.json()
+    assert first["is_new"] is True and first["demo_code"]
+    signed = http.post("/auth/signup", json={
+        "email": email, "code": first["demo_code"], "job": "개발", "character": "rabbit",
+        "agree_privacy": True, "remember": True,
+    })
+    assert signed.status_code == 201, signed.text
+    assert days_left(signed.json()["access_token"]) == pytest.approx(30, abs=0.01)  # 로그인 유지
+
+    # 같은 이메일로 다시 → 로그인 코드, 바로 로그인 (유지 안 하면 1일)
+    again = http.post("/auth/start", json={"email": email.upper()}).json()
+    assert again["is_new"] is False
+    login = http.post("/auth/login", json={"email": email, "code": again["demo_code"]})
+    assert login.status_code == 200, login.text
+    assert days_left(login.json()["access_token"]) == pytest.approx(1, abs=0.01)
+
+    # 로그인 코드로는 가입할 수 없다 (코드 용도가 섞이지 않음)
+    third = http.post("/auth/start", json={"email": email}).json()
+    assert http.post("/auth/email-code/verify",
+                     json={"email": email, "purpose": "signup", "code": third["demo_code"]}).status_code != 204

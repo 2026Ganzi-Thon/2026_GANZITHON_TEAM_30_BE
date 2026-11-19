@@ -101,3 +101,17 @@ def write_follow_up(
             return text
 
     return fallback_follow_up(crisis, last_turn, neighbors)
+
+
+def write_private_reply(post, thread: list[tuple[str, str]], *, crisis: bool, retries: int = 1) -> str:
+    """나만 보기 고민에서 작성자와 나누는 대화의 온도 답. thread가 비어 있으면 첫인사."""
+    if settings.provider() != "local":
+        system = prompts.private_chat_prompt(post.comfort_type, crisis)
+        masked = [(speaker, mask_personal_info(text)) for speaker, text in thread]
+        user = prompts.follow_up_user(
+            mask_personal_info(post.title), mask_personal_info(post.content), getattr(post, "topic", None), masked
+        )
+        text = _generate(system, user, crisis, retries, "나만 보기 대화")
+        if text:
+            return text
+    return prompts.FALLBACK_CRISIS_COMMENT if crisis else prompts.FALLBACK_PRIVATE_CHAT

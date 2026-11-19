@@ -3,6 +3,7 @@
 Render 무료 플랜은 재시작·재배포 때 디스크(SQLite 파일)가 초기화된다.
 그래서 켜질 때 시연 데이터가 없으면 demo_seed → demo_seed_b(임베딩)를 실행한 뒤 서버를 띄운다.
 데이터가 이미 있으면 건드리지 않는다 (--reset 하지 않음).
+보충 시드(demo_seed_more)는 없는 이웃·고민만 채우므로 매번 실행한다 (Neon처럼 데이터가 남는 DB용).
 """
 import os
 import sys
@@ -11,11 +12,14 @@ from sqlalchemy import select
 
 import demo_seed
 import demo_seed_b
-from app.database import Base, SessionLocal, engine
+import demo_seed_more
+from app.database import Base, SessionLocal, engine, upgrade_schema
 from app.models import User
 
 
 def seed_if_empty() -> None:
+    # 시드가 서버(main.py)보다 먼저 돌기 때문에, 기존 DB(Neon)에 새 컬럼(users.color 등)을 여기서 먼저 붙인다
+    upgrade_schema()
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
         has_demo = db.scalar(select(User.id).where(User.email == demo_seed.USERS["me"][0]))
@@ -31,6 +35,10 @@ def seed_if_empty() -> None:
 
 if __name__ == "__main__":
     seed_if_empty()
+    try:
+        demo_seed_more.main()
+    except Exception as e:  # 보충 시드가 실패해도 서버는 띄운다
+        print(f"보충 시드 실패, 서버는 계속 시작합니다: {e}")
     sys.stdout.flush()  # execvp가 프로세스를 바꾸기 전에 시드 로그를 내보낸다
     port = os.getenv("PORT", "8000")
     os.execvp("uvicorn", ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", port])

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from app.ai import client as ai_client, settings as ai_settings  # noqa: E402
-from app.ai.check import check_text  # noqa: E402
+from app.ai.check import GUIDE, check_text  # noqa: E402
 from app.ai.comment import write_first_comment  # noqa: E402
 from app.ai.models import PostEmbedding  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
@@ -277,3 +277,52 @@ def test_first_comment_uses_llm_and_adds_hotline_for_crisis(llm):
 
     text = write_first_comment(P, crisis=True)
     assert text.startswith("정말") and "109" in text and not text.startswith('"')
+
+
+def test_small_company_names_are_caught_without_ai_but_common_words_pass():
+    for text in ["한빛테크에서 일해요", "미래랩스 팀장이 무서워요", "대한물산 다녀요"]:
+        r = check_text(text, kind="post")
+        assert not r.ok and r.personal_info, text
+    for text in ["신용카드 값이 밀렸어요", "핀테크 회사에 다녀요", "소프트웨어 개발자예요",
+                 "전자결재 올렸는데 반려됐어요", "그룹장님이 무서워요", "스터디그룹 사람들이 좋아요"]:
+        assert check_text(text, kind="post").ok, text
+
+
+def test_workplace_words_are_sent_to_ai_as_a_hint(llm):
+    seen = {}
+
+    def fake_chat(system, user, **k):
+        seen["user"] = user
+        return ('{"personal_info": {"detected": true, "spans": ["오렌지마켓"], "suggestion": ""},'
+                ' "offensive": {"detected": false}, "crisis": {"detected": false}}')
+
+    llm.setattr(ai_client, "chat", fake_chat)
+    r = check_text("작년에 오렌지마켓 입사했는데 너무 힘들어요", kind="post")
+    assert "<workplace_hint>오렌지마켓</workplace_hint>" in seen["user"]
+    assert not r.ok and r.issues[0].text == "오렌지마켓"
+    # 일반 명칭은 후보로 보내지 않는다
+    check_text("지금 회사에 다닌 지 3년인데 지쳐요", kind="post")
+    assert "workplace_hint" not in seen["user"]
+
+
+def test_ai_that_points_nowhere_on_a_masked_post_is_asked_again(llm):
+    calls = []
+
+    def answer(detected):
+        return ('{"personal_info": {"detected": %s, "spans": [], "suggestion": ""},'
+                ' "offensive": {"detected": false}, "crisis": {"detected": false}}' % detected)
+
+    def still_found(system, user, **k):
+        calls.append(user)
+        return answer("true")
+
+    llm.setattr(ai_client, "chat", still_found)
+    r = check_text("제 번호 [전화번호]로 옆 가게 사장님이 연락해요", kind="post")
+    assert len(calls) == 2 and "[전화번호]" not in calls[1]  # 가림 표시를 지우고 다시 물음
+    assert not r.ok and r.suggestion == GUIDE["check"]
+
+    calls.clear()
+    replies = iter([answer("true"), answer("false")])
+    llm.setattr(ai_client, "chat", lambda *a, **k: (calls.append(1), next(replies))[1])
+    assert check_text("제 번호 [전화번호]로 연락이 와요", kind="post").ok  # 가림 표시만 본 거였으면 통과
+    assert len(calls) == 2

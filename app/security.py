@@ -4,19 +4,22 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 
-from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM, SECRET_KEY
+from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, JWT_ALGORITHM, REMEMBER_TOKEN_DAYS, SECRET_KEY
 
 
 # ---------- JWT ----------
 
-def create_access_token(user_id: int) -> str:
+def create_access_token(user_id: int, remember: bool = False) -> str:
     """로그인 성공 시 발급하는 토큰.
-    sub = 누구의 토큰인지(user id), exp = 만료 시각, jti = 토큰 고유 ID(로그아웃 처리용)."""
+    sub = 누구의 토큰인지(user id), exp = 만료 시각, jti = 토큰 고유 ID(로그아웃 처리용).
+    remember("로그인 유지")면 REMEMBER_TOKEN_DAYS일, 아니면 ACCESS_TOKEN_EXPIRE_MINUTES 동안 유효하다.
+    토큰에는 user id만 담고 이메일 같은 개인정보는 넣지 않는다."""
     now = datetime.now(timezone.utc)
+    lifetime = timedelta(days=REMEMBER_TOKEN_DAYS) if remember else timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
         "sub": str(user_id),
         "iat": now,
-        "exp": now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        "exp": now + lifetime,
         "jti": uuid.uuid4().hex,
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=JWT_ALGORITHM)

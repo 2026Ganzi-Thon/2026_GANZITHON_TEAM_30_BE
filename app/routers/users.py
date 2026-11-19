@@ -39,6 +39,8 @@ def update_my_profile(body: ProfileUpdate, me: User = Depends(get_current_user),
     me.character = character
     if body.accept_invites is not None:
         me.accept_invites = body.accept_invites
+    if body.color is not None:
+        me.color = body.color
     try:
         db.commit()
     except IntegrityError:  # 동시에 같은 닉네임을 고른 경우

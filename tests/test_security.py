@@ -131,7 +131,7 @@ def test_public_profile_never_exposes_email_or_years():
     b, _ = signup()
     post_id = write_post(a, show_years=False)
     profile = http.get(f"/users/{a_id}/profile?island_id={island_id()}", headers=b).json()
-    assert set(profile) == {"user_id", "nickname", "character", "job"}
+    assert set(profile) == {"user_id", "nickname", "character", "color", "job"}
     detail = post_detail(b, post_id)
     assert "email" not in str(detail)
     assert detail["years"] is None

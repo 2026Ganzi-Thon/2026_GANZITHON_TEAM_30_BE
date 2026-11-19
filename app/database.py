@@ -50,6 +50,13 @@ def upgrade_schema() -> None:
             user_cols = {c["name"] for c in inspect(engine).get_columns("users")}
             if "accept_invites" not in user_cols:
                 conn.execute(text("ALTER TABLE users ADD COLUMN accept_invites BOOLEAN NOT NULL DEFAULT TRUE"))
+            if "color" not in user_cols:  # 캐릭터 색감(팔레트)
+                conn.execute(text("ALTER TABLE users ADD COLUMN color VARCHAR(20) NOT NULL DEFAULT 'original'"))
+        if "posts" in tables:
+            post_cols = {c["name"] for c in inspect(engine).get_columns("posts")}
+            for col in ("map_x", "map_y"):  # 글을 쓴 지도 위 자리
+                if col not in post_cols:
+                    conn.execute(text(f"ALTER TABLE posts ADD COLUMN {col} FLOAT"))
         if "reports" in tables:
             report_cols = {c["name"] for c in inspect(engine).get_columns("reports")}
             if "resolved_at" not in report_cols:

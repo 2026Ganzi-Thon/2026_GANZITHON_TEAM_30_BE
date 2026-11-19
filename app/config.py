@@ -46,10 +46,13 @@ REPORT_TRUSTED_ACCOUNT_HOURS = float(os.getenv("REPORT_TRUSTED_ACCOUNT_HOURS", 2
 ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
 AI_FOLLOWUP_MAX = int(os.getenv("AI_FOLLOWUP_MAX", 10))
 AI_DAILY_REPLY_LIMIT = int(os.getenv("AI_DAILY_REPLY_LIMIT", 30))
+PRIVATE_CHAT_MAX = int(os.getenv("PRIVATE_CHAT_MAX", 20))  # 나만 보기 고민 하나에서 내가 보낼 수 있는 말 수
+FOOTPRINT_HOURS = 24  # 이 시간 안에 섬을 다녀간 이웃의 발자국을 보여 준다
 INVITE_MAX_PER_POST = int(os.getenv("INVITE_MAX_PER_POST", 3))
 INVITE_DAILY_PER_USER = int(os.getenv("INVITE_DAILY_PER_USER", 3))
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24))  # 1일
+REMEMBER_TOKEN_DAYS = int(os.getenv("REMEMBER_TOKEN_DAYS", 30))  # "로그인 유지"를 체크했을 때 토큰 유효 기간
 
 # 아래 선택지는 FE 레포(js/app.js, js/village.js)와 같은 값으로 맞춘 것. 바꿀 때는 FE와 함께 바꿀 것.
 JOBS = ["디자인", "영업", "개발"]
@@ -92,6 +95,9 @@ CHARACTERS = {
     "pig": "돼지",
     "lion": "사자",
 }
+
+# 캐릭터 색감(팔레트). FE가 키별로 색 필터를 적용한다. 첫 값이 기본.
+CHARACTER_COLORS = ("original", "warm", "forest", "ocean", "lavender", "pastel", "vivid", "mono")
 
 
 LEFT_NICKNAME = '떠난 이용자'
