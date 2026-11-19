@@ -11,6 +11,9 @@
   8. 오늘의 두 고민  최근 24시간 공감이 가장 많이 모인 고민 1개 + 아직 이웃 답을 기다리는 고민 1개를 나란히.
      인기 순위표로 만들면 이미 관심 받은 글에만 시선이 몰리므로, 일부러 1개씩만 짝지어 보여 준다.
 
+갱신: 매일 한국 시간 아침 8시. 그 시각까지 쌓인 글만 센다 → 하루 동안은 같은 리포트를 본다
+(유리병 편지와 같은 리듬). 같은 사람·같은 날 결과는 메모리에 두어 다시 계산하지 않는다.
+
 개인 글 내용은 내보내지 않는다. 묶음의 대표 제목만 보여 주는데, 이건 원래 피드에서 누구나 보는 공개 글 제목이다.
 """
 import json
@@ -30,6 +33,7 @@ from app.models import Island, Post, Reaction, User
 from app.queries import neighbor_comment_exists, public_posts
 
 KST = timezone(timedelta(hours=9))
+DAILY_HOUR = 8  # 리포트·유리병 편지가 새로 바뀌는 시각 (한국 시간)
 MIN_POSTS = 5  # 글이 이보다 적으면 리포트 대신 "조금 더 쌓이면 보여 줄게요"
 MIN_WARM = 2  # 오늘 공감이 2개 이상 모인 글만 "공감이 모인 고민"으로
 MIN_GROUP = 3  # 비슷한 고민 묶음은 3개 이상 모였을 때만
@@ -121,6 +125,8 @@ class InsightsOut(BaseModel):
     jobs: list[JobTop]
     warmest: PostPick | None
     waiting: PostPick | None
+    as_of: datetime  # 이 리포트의 기준 시각 (오늘 아침 8시)
+    next_at: datetime  # 다음 갱신 시각 (내일 아침 8시)
 
 
 # ---------- 문장 만들기 ----------
@@ -148,6 +154,15 @@ def pct(ratio: float) -> int:
 
 
 # ---------- 계산 ----------
+
+def daily_window(now: datetime) -> tuple[datetime, datetime]:
+    """(오늘 기준 시각, 다음 기준 시각). 아침 8시 전이면 아직 어제 8시가 기준."""
+    kst = now.astimezone(KST)
+    start = kst.replace(hour=DAILY_HOUR, minute=0, second=0, microsecond=0)
+    if kst < start:
+        start -= timedelta(days=1)
+    return start, start + timedelta(days=1)
+
 
 def _kst(dt: datetime) -> datetime:
     return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(KST)
@@ -218,30 +233,51 @@ def island_vectors(db: Session, island_id: int) -> tuple[list[int], np.ndarray]:
     return ids, matrix
 
 
-def similar_groups(ids: list[int], sims: np.ndarray, threshold: float, posts: dict[int, Post]) -> list[SimilarGroup]:
-    """닮은 글끼리 묶기 (탐욕적 묶음).
+def greedy_groups(sims: np.ndarray, threshold: float, min_size: int, limit: int | None = None) -> list[list[int]]:
+    """닮은 글끼리 묶기 (탐욕적 묶음). 돌려주는 각 묶음의 첫 번째가 대표.
     1) 기준 이상으로 닮은 글이 가장 많은 글을 대표로 고른다.
     2) 대표와 닮은 글을 모두 한 묶음에 넣고 목록에서 뺀다.
-    3) 남은 글로 반복. 묶음 크기가 MIN_GROUP보다 작아지면 멈춘다.
+    3) 남은 글로 반복. 묶음 크기가 min_size보다 작아지면 멈춘다.
     k-means와 달리 묶음 수를 미리 정하지 않아도 되고, 같은 데이터면 늘 같은 결과가 나온다."""
-    left = list(range(len(ids)))
-    groups = []
-    while left and len(groups) < TOP_GROUPS:
+    left = list(range(len(sims)))
+    groups: list[list[int]] = []
+    while left and (limit is None or len(groups) < limit):
         sub = sims[np.ix_(left, left)] >= threshold
         np.fill_diagonal(sub, False)
         degree = sub.sum(axis=1)
         center = int(np.argmax(degree))
-        if degree[center] + 1 < MIN_GROUP:
+        if degree[center] + 1 < min_size:
             break
         members = [left[center]] + [left[j] for j in np.where(sub[center])[0]]
-        head = posts[ids[left[center]]]
-        groups.append(SimilarGroup(
-            post_id=head.id, title=head.title, topic=head.topic, size=len(members),
-            similarity=round(float(sims[left[center], members[1:]].mean()), 3),
-        ))
+        groups.append(members)
         taken = set(members)
         left = [i for i in left if i not in taken]
     return groups
+
+
+def similar_groups(ids: list[int], sims: np.ndarray, threshold: float, posts: dict[int, Post]) -> list[SimilarGroup]:
+    out = []
+    for members in greedy_groups(sims, threshold, MIN_GROUP, TOP_GROUPS):
+        head = posts[ids[members[0]]]
+        out.append(SimilarGroup(
+            post_id=head.id, title=head.title, topic=head.topic, size=len(members),
+            similarity=round(float(sims[members[0], members[1:]].mean()), 3),
+        ))
+    return out
+
+
+def bubble_groups(db: Session, island_id: int, post_ids: list[int]) -> dict[int, list[int]]:
+    """지도 말풍선 합치기: {대표 글 id: [대표 포함 묶인 글 id들]}. 2개 이상 묶인 것만.
+    벡터가 없는 글(아직 임베딩 전)은 따로 남는다."""
+    ids, matrix = island_vectors(db, island_id)
+    row = {pid: i for i, pid in enumerate(ids)}
+    keep = [row[pid] for pid in post_ids if pid in row]
+    if len(keep) < 2:
+        return {}
+    sub = matrix[keep]
+    threshold = PAIR_SIMILARITY.get(settings.provider(), 0.58)
+    groups = greedy_groups(sub @ sub.T, threshold, min_size=2)
+    return {ids[keep[g[0]]]: [ids[keep[i]] for i in g] for g in groups}
 
 
 def my_resonance(
@@ -267,11 +303,11 @@ def my_resonance(
     )
 
 
-def job_tops(db: Session) -> list[JobTop]:
+def job_tops(db: Session, cutoff: datetime) -> list[JobTop]:
     rows = db.execute(
         select(Island.id, Island.name, Island.job, Post.topic)
         .select_from(Post).join(Island, Island.id == Post.island_id)
-        .where(Post.visibility == "public", Post.status == "published", Island.type == "job")
+        .where(Post.visibility == "public", Post.status == "published", Island.type == "job", Post.created_at < cutoff)
     ).all()
     by_island: dict[int, tuple[str, str, Counter]] = {}
     for island_id, name, job, topic in rows:
@@ -287,20 +323,20 @@ def job_tops(db: Session) -> list[JobTop]:
 
 
 def todays_pair(db: Session, island: Island, me: User, hidden: set[int], now: datetime) -> tuple[PostPick | None, PostPick | None]:
-    base = public_posts().where(Post.island_id == island.id)
+    base = public_posts().where(Post.island_id == island.id, Post.created_at < now)
     if hidden:
         base = base.where(Post.user_id.not_in(hidden))
     ids = base.with_only_columns(Post.id)
     warm = db.execute(
         select(Reaction.post_id, func.count(Reaction.id).label("n"))
-        .where(Reaction.post_id.in_(ids), Reaction.created_at >= now - timedelta(days=1))
+        .where(Reaction.post_id.in_(ids), Reaction.created_at >= now - timedelta(days=1), Reaction.created_at < now)
         .group_by(Reaction.post_id).order_by(func.count(Reaction.id).desc(), Reaction.post_id.desc()).limit(1)
     ).first()
     warmest = None
     if warm and warm.n >= MIN_WARM:
         p = db.get(Post, warm.post_id)
         warmest = PostPick(post_id=p.id, title=p.title, topic=p.topic, count=warm.n)
-    # 최근 7일 안의 글 중 이웃 댓글이 없는 가장 오래 기다린 글 (내 글은 빼고)
+    # 최근 7일 안의 글 중 (지금도) 이웃 댓글이 없는 가장 오래 기다린 글 (내 글은 빼고)
     p = db.scalars(
         base.where(Post.user_id != me.id, Post.created_at >= now - WEEK, ~neighbor_comment_exists())
         .order_by(Post.created_at).limit(1)
@@ -346,9 +382,30 @@ def headlines(out: InsightsOut, island: Island) -> list[str]:
     return lines
 
 
-def island_insights(db: Session, island: Island, me: User, hidden: set[int]) -> InsightsOut:
-    now = datetime.now(timezone.utc)
-    stmt = public_posts().where(Post.island_id == island.id)
+_report_cache: dict[tuple, InsightsOut] = {}
+REPORT_CACHE_MAX = 2000
+
+
+def island_insights(
+    db: Session, island: Island, me: User, hidden: set[int], now: datetime | None = None,
+) -> InsightsOut:
+    """오늘 아침 8시까지 쌓인 글로 만든 리포트. 같은 사람·같은 날·같은 차단 목록이면 저장해 둔 결과를 준다."""
+    cutoff, next_at = daily_window(now or datetime.now(timezone.utc))
+    key = (island.id, me.id, cutoff, frozenset(hidden))
+    if key in _report_cache:
+        return _report_cache[key]
+    out = _build_insights(db, island, me, hidden, cutoff, next_at)
+    if len(_report_cache) >= REPORT_CACHE_MAX:
+        _report_cache.clear()  # 날이 바뀌면 어차피 다시 계산하므로 단순하게 비운다
+    _report_cache[key] = out
+    return out
+
+
+def _build_insights(
+    db: Session, island: Island, me: User, hidden: set[int], cutoff: datetime, next_at: datetime,
+) -> InsightsOut:
+    now = cutoff  # 아래 계산의 '지금'은 오늘 아침 8시
+    stmt = public_posts().where(Post.island_id == island.id, Post.created_at < cutoff)
     if hidden:
         stmt = stmt.where(Post.user_id.not_in(hidden))
     posts = db.scalars(stmt).all()
@@ -375,8 +432,8 @@ def island_insights(db: Session, island: Island, me: User, hidden: set[int]) -> 
         comfort=_shares(comfort, total, labels=COMFORT_TYPES),
         groups=similar_groups(ids, sims, threshold, by_id) if len(ids) >= MIN_GROUP else [],
         me=my_resonance(me, ids, sims, threshold, by_id, topics),
-        jobs=job_tops(db),
-        warmest=None, waiting=None,
+        jobs=job_tops(db, cutoff),
+        warmest=None, waiting=None, as_of=cutoff, next_at=next_at,
     )
     out.warmest, out.waiting = todays_pair(db, island, me, hidden, now)
     if out.enough:

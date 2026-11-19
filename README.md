@@ -86,6 +86,7 @@ API 문서: http://localhost:8000/docs
 ## 섬 고민 리포트 (데이터 분석)
 
 `GET /islands/{id}/insights` (로그인 필요, 들어갈 수 있는 섬만) → 섬에 쌓인 공개 고민 분석. 계산은 `app/insights.py`.
+매일 한국 시간 아침 8시까지 쌓인 글로 계산하고(`as_of`), 다음 날 아침 8시(`next_at`)까지 같은 결과를 준다.
 
 - 주제 순위·큰 분류 비율, 최근 7일 vs 그 전 7일에 가장 많이 늘어난 주제
 - 고민이 올라오는 요일 × 시간대 (한국 시간, 섬지기 한마디와 같은 칸)
@@ -93,6 +94,7 @@ API 문서: http://localhost:8000/docs
 - 결이 닮은 고민 묶음: 저장된 고민 임베딩끼리 코사인 유사도 0.58(upstage) 이상인 글을 탐욕적으로 묶음 (3개 이상만)
 - 내 고민과 공명: 내 최근 고민과 닮은 고민 수·이웃 수·가장 닮은 정도, 내 주제 순위
 - 직무섬마다 가장 많은 주제, 오늘 공감이 모인 고민 1개 + 아직 답을 기다리는 고민 1개
+- 지도 말풍선 합치기: `GET /islands/{id}/neighbors`의 `latest_post.bubble`(대표 글 id)·`bubble_size`. 내용이 닮은 이웃 고민은 말풍선 하나로 묶어 이웃이 많아져도 지도가 가볍다 (내 글은 묶지 않음)
 - 글 5개 미만이면 `enough=false`. 차단 관계인 사람의 글은 빼고 센다. `headlines`는 한 줄 요약 문장
 
 ## 지표 API (발표용, 토큰 불필요)
@@ -103,7 +105,7 @@ API 문서: http://localhost:8000/docs
 
 - 위협별 대응과 확인 테스트: [SECURITY.md](SECURITY.md)
 - AI 사용과 검증 기록: [docs/AI_USAGE.md](docs/AI_USAGE.md)
-- `pip install -r requirements-dev.txt` 후 `pytest -q` (109개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
+- `pip install -r requirements-dev.txt` 후 `pytest -q` (111개, CI는 SQLite와 PostgreSQL 양쪽). CI는 push마다 테스트·`pip-audit`·`gitleaks` 실행
 
 ## 환경변수
 

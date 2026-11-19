@@ -198,6 +198,21 @@ class IslandVisit(Base):
     visited_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_now, index=True)
 
 
+class BottleDraw(Base):
+    """하루 한 통 유리병 편지: (사람, 섬, 날)마다 한 번 뽑아 두고, 읽으면 opened_at을 채운다.
+    날은 한국 시간 아침 8시에 바뀐다 → 새로고침해도 같은 편지, 읽으면 다음 날 아침까지 강물이 비어 있다."""
+
+    __tablename__ = "bottle_draws"
+    __table_args__ = (UniqueConstraint("user_id", "island_id", "day", name="uq_bottle_draw"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    island_id: Mapped[int] = mapped_column(ForeignKey("islands.id"))
+    day: Mapped[str] = mapped_column(String(10))  # "2026-11-19" (아침 8시 기준 날짜)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id", ondelete="CASCADE"))
+    opened_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, default=None)
+
+
 class PrivateChat(Base):
     """나만 보기 고민에서 작성자와 AI 이웃 '온도'가 나눈 대화. 작성자 말고는 아무도 볼 수 없다.
     댓글(comments)과 따로 두어, 나중에 글을 공개로 바꿔도 이 대화는 이웃에게 보이지 않는다."""

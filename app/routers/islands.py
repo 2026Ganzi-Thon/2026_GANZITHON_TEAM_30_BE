@@ -10,7 +10,8 @@ from app import presence
 from app.config import COMFORT_TYPES, FOOTPRINT_HOURS, ISLAND_COUNT_DAYS, LEFT_CHARACTER, LEFT_NICKNAME
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import Comment, Island, IslandVisit, Post, User
+from app.insights import bubble_groups, daily_window
+from app.models import BottleDraw, Comment, Island, IslandVisit, Post, User
 from app.queries import (
     blocked_user_ids,
     get_accessible_island,
@@ -98,6 +99,13 @@ def list_neighbors(island_id: int, user: User = Depends(get_current_user), db: S
             post_count=cnt,
             is_me=u.id == user.id,
         )
+
+    # 내용이 닮은 이웃 고민은 말풍선 하나로 합친다 (내 글은 항상 따로 보이게 빼고 묶음)
+    by_post = {n.latest_post.id: n.latest_post for n in neighbors.values() if n.latest_post and not n.is_me}
+    for lead, members in bubble_groups(db, island.id, list(by_post)).items():
+        for pid in members:
+            by_post[pid].bubble = lead
+        by_post[lead].bubble_size = len(members)
 
     # 내 캐릭터는 글이 없어도 지도에 나와야 한다
     if user.id not in neighbors:
@@ -191,25 +199,23 @@ def get_footprints(island_id: int, user: User = Depends(get_current_user), db: S
     )
 
 
-@router.get("/{island_id}/bottle", response_model=BottleOut)
-def get_bottle(
-    island_id: int,
-    skip: list[int] = Query([], description="이미 열어 본 유리병 글 id (다시 안 나오게)"),
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """유리병 편지: 다른 섬에서 떠내려온 고민 하나. 직무섬에선 통합섬 고민이, 통합섬에선 내 직무섬 고민이 온다.
+def bottle_day(now: datetime) -> tuple[str, datetime]:
+    """(오늘 편지의 날짜, 다음 편지가 오는 시각). 유리병은 하루 한 통, 한국 시간 아침 8시에 새로 떠내려온다."""
+    start, next_at = daily_window(now)
+    return start.date().isoformat(), next_at
+
+
+def pick_bottle_post(db: Session, island: Island, user: User, exclude: set[int]) -> Post | None:
+    """다른 섬에서 떠내려온 고민 하나. 직무섬에선 통합섬 고민이, 통합섬에선 내 직무섬 고민이 온다.
     그쪽에 없으면 이 섬의 예전 고민을 건진다. 글쓴이가 뒤에 덧붙인 이야기가 있는 글을 더 자주 고른다."""
-    island = get_accessible_island(db, island_id, user)
     if island.type == "common":
         other = db.scalar(select(Island).where(Island.type == "job", Island.job == user.job))
     else:
         other = db.scalar(select(Island).where(Island.type == "common"))
-
     hidden = blocked_user_ids(db, user.id) | {user.id}
     base = (
         public_posts().join(User, User.id == Post.user_id)
-        .where(User.deleted_at.is_(None), Post.user_id.not_in(hidden), Post.id.not_in(skip[:100]))
+        .where(User.deleted_at.is_(None), Post.user_id.not_in(hidden))
     )
     has_story = (
         select(Comment.id)
@@ -217,16 +223,56 @@ def get_bottle(
                Comment.deleted_at.is_(None), Comment.hidden_at.is_(None))
         .exists()
     )
-    post = None
-    for target in [i for i in (other, island) if i is not None]:
-        candidates = base.where(Post.island_id == target.id)
-        if random.random() < 0.6:
-            post = db.scalar(candidates.where(has_story).order_by(func.random()).limit(1))
-        post = post or db.scalar(candidates.order_by(func.random()).limit(1))
-        if post:
-            break
-    if post is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "아직 떠내려온 유리병이 없어요")
+    # 예전에 받은 편지는 되도록 다시 안 보냄. 다 받았으면 다시 돌려 씀
+    for skip in (exclude, set()):
+        for target in [i for i in (other, island) if i is not None]:
+            candidates = base.where(Post.island_id == target.id)
+            if skip:
+                candidates = candidates.where(Post.id.not_in(skip))
+            post = None
+            if random.random() < 0.6:
+                post = db.scalar(candidates.where(has_story).order_by(func.random()).limit(1))
+            post = post or db.scalar(candidates.order_by(func.random()).limit(1))
+            if post:
+                return post
+    return None
+
+
+def still_readable(db: Session, post: Post | None, user: User) -> bool:
+    if post is None or post.visibility != "public" or post.status != "published":
+        return False
+    writer = db.get(User, post.user_id)
+    return writer is not None and writer.deleted_at is None and post.user_id not in blocked_user_ids(db, user.id)
+
+
+@router.get("/{island_id}/bottle", response_model=BottleOut)
+def get_bottle(island_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """오늘의 유리병 편지 (하루 한 통, 아침 8시에 새로 옴). 읽고 나면 다음 날 아침까지 404."""
+    island = get_accessible_island(db, island_id, user)
+    day, next_at = bottle_day(datetime.now(timezone.utc))
+    draw = db.scalar(select(BottleDraw).where(
+        BottleDraw.user_id == user.id, BottleDraw.island_id == island.id, BottleDraw.day == day))
+    if draw is not None and draw.opened_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "오늘의 유리병은 이미 읽었어요. 내일 아침 8시에 새 편지가 떠내려와요")
+
+    post = db.get(Post, draw.post_id) if draw else None
+    if not still_readable(db, post, user):  # 처음이거나, 뽑아 둔 글이 그새 가려지거나 지워졌으면 다시 뽑음
+        received = set(db.scalars(select(BottleDraw.post_id).where(BottleDraw.user_id == user.id)))
+        post = pick_bottle_post(db, island, user, received)
+        if post is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "아직 떠내려온 유리병이 없어요")
+        if draw is None:
+            draw = BottleDraw(user_id=user.id, island_id=island.id, day=day, post_id=post.id)
+            db.add(draw)
+        else:
+            draw.post_id = post.id
+        try:
+            db.commit()
+        except IntegrityError:  # 같은 사람이 동시에 두 번 열었을 때: 먼저 저장된 편지를 쓴다
+            db.rollback()
+            draw = db.scalar(select(BottleDraw).where(
+                BottleDraw.user_id == user.id, BottleDraw.island_id == island.id, BottleDraw.day == day))
+            post = db.get(Post, draw.post_id)
 
     from_island = db.get(Island, post.island_id)
     writer = db.get(User, post.user_id)
@@ -244,8 +290,22 @@ def get_bottle(
     return BottleOut(
         post_id=post.id, island_id=from_island.id, island_name=from_island.name, topic=post.topic,
         title=post.title, content=post.content, comfort_type=post.comfort_type, created_at=post.created_at,
-        author=to_author(writer, from_island), follow_up=follow_up, comment_count=comment_count,
+        author=to_author(writer, from_island), follow_up=follow_up, comment_count=comment_count, next_at=next_at,
     )
+
+
+@router.post("/{island_id}/bottle/open", status_code=status.HTTP_204_NO_CONTENT)
+def open_bottle(island_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """오늘의 편지를 읽었다고 표시 → 강물에서 사라지고 다음 날 아침 8시에 새 편지가 온다."""
+    island = get_accessible_island(db, island_id, user)
+    day, _ = bottle_day(datetime.now(timezone.utc))
+    draw = db.scalar(select(BottleDraw).where(
+        BottleDraw.user_id == user.id, BottleDraw.island_id == island.id, BottleDraw.day == day))
+    if draw is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "오늘 떠내려온 유리병이 없어요")
+    if draw.opened_at is None:
+        draw.opened_at = datetime.now(timezone.utc)
+        db.commit()
 
 
 def island_temperature(posts: int, comments: int) -> float:

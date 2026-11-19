@@ -168,6 +168,9 @@ class LatestPostOut(BaseModel):
     created_at: datetime
     map_x: float | None = None  # 글을 쓴 지도 위 자리(%). 없으면 FE가 자리를 정한다
     map_y: float | None = None
+    # 내용이 닮은 고민끼리는 지도에 말풍선 하나로 합친다 (이웃이 많아져도 지도가 무거워지지 않게)
+    bubble: int | None = None  # 이 글이 합쳐진 대표 글 id (대표 글이면 자기 id, 안 합쳐졌으면 None)
+    bubble_size: int = 1  # 대표 글에만: 합쳐진 글 수
 
 
 class PresenceIn(BaseModel):
@@ -220,6 +223,7 @@ class BottleOut(BaseModel):
     author: AuthorOut
     follow_up: str | None = None
     comment_count: int
+    next_at: datetime  # 다음 편지가 떠내려오는 시각 (한국 시간 아침 8시)
 
 
 class NeighborOut(BaseModel):

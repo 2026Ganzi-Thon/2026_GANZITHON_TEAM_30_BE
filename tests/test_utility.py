@@ -436,20 +436,21 @@ def test_bottle_brings_a_worry_from_the_other_island_with_its_story():
     root = first_ai_comment(writer, post_id)
     _reply(writer, post_id, root["id"], "한 달 지나서 결국 남기로 했어요. 마음이 편해졌어요")
 
-    bottles = [http.get(f"/islands/{design}/bottle", headers=me).json() for _ in range(15)]
-    assert all(b["island_id"] == common for b in bottles)  # 직무섬에선 통합섬 고민이 떠내려온다
-    mine = [b for b in bottles if b["post_id"] == post_id]
-    if mine:
-        assert mine[0]["follow_up"] == "한 달 지나서 결국 남기로 했어요. 마음이 편해졌어요"
+    # 하루 한 통: 새로고침해도 같은 편지, 직무섬에선 통합섬 고민이 떠내려온다
+    bottles = [http.get(f"/islands/{design}/bottle", headers=me).json() for _ in range(3)]
+    assert len({b["post_id"] for b in bottles}) == 1 and bottles[0]["island_id"] == common
+    assert bottles[0]["next_at"].startswith(bottles[0]["next_at"][:10]) and "T08:00:00" in bottles[0]["next_at"]
+    if bottles[0]["post_id"] == post_id:
+        assert bottles[0]["follow_up"] == "한 달 지나서 결국 남기로 했어요. 마음이 편해졌어요"
 
-    # 열어 본 편지는 skip으로 넘기면 다시 안 나온다
-    again = http.get(f"/islands/{design}/bottle", params={"skip": [b["post_id"] for b in bottles]}, headers=me)
-    assert again.status_code in (200, 404)
-    if again.status_code == 200:
-        assert again.json()["post_id"] not in {b["post_id"] for b in bottles}
+    # 읽으면 사라지고, 다음 날 아침 8시까지 새 편지가 없다
+    assert http.post(f"/islands/{design}/bottle/open", headers=me).status_code == 204
+    gone = http.get(f"/islands/{design}/bottle", headers=me)
+    assert gone.status_code == 404 and "아침 8시" in gone.json()["detail"]
 
     # 내 글은 유리병으로 오지 않는다
-    assert all(b["post_id"] != post_id for b in (http.get(f"/islands/{common}/bottle", headers=writer).json(),))
+    own = http.get(f"/islands/{common}/bottle", headers=writer)
+    assert own.status_code == 404 or own.json()["post_id"] != post_id
 
 
 def test_private_worry_can_talk_with_ai_only_for_the_author(monkeypatch):
@@ -612,7 +613,7 @@ def test_island_insights_report():
 
     from app.ai.embedding import upsert_post_embedding
     from app.database import SessionLocal
-    from app.insights import MIN_POSTS, copula, island_insights, similar_groups, with_and
+    from app.insights import MIN_POSTS, copula, daily_window, island_insights, similar_groups, with_and
     from app.models import Comment, Island, Post, Reaction, User
 
     assert copula("번아웃·무기력") == "이에요" and copula("들어주세요") == "예요"
@@ -626,7 +627,9 @@ def test_island_insights_report():
     assert len(groups) == 1 and groups[0].size == 3
 
     users = [signup()[1] for _ in range(4)]
-    now = datetime.now(timezone.utc)
+    # 리포트는 오늘 아침 8시까지 쌓인 글만 센다 → 글·공감 시각을 그 전으로 둔다
+    now, _ = daily_window(datetime.now(timezone.utc))
+    now -= timedelta(minutes=30)
     with SessionLocal() as db:
         island = Island(type="job", job="리포트테스트", name="리포트섬")  # 테스트마다 새 DB라 한 번만 만들어짐
         db.add(island)
@@ -649,7 +652,8 @@ def test_island_insights_report():
             upsert_post_embedding(db, p)
             made.append(p)
         # 오늘 공감 2개가 모인 글, 이웃 댓글이 달린 글
-        db.add_all([Reaction(post_id=made[1].id, user_id=users[2]), Reaction(post_id=made[1].id, user_id=users[3])])
+        db.add_all([Reaction(post_id=made[1].id, user_id=users[2], created_at=now),
+                    Reaction(post_id=made[1].id, user_id=users[3], created_at=now)])
         db.add(Comment(post_id=made[3].id, user_id=users[0], content="저도 그랬어요"))
         db.commit()
 
@@ -665,6 +669,18 @@ def test_island_insights_report():
         assert out.warmest.post_id == made[1].id and out.warmest.count == 2
         assert out.waiting is not None and out.waiting.post_id not in (made[0].id, made[3].id)  # 내 글·답 달린 글 제외
         assert any("업무량·스트레스" in line for line in out.headlines)
+        assert out.as_of.hour == 8 and out.next_at - out.as_of == timedelta(days=1)
+
+        # 아침 8시 뒤에 올라온 글은 내일 리포트에 들어간다 (오늘 리포트는 그대로)
+        late = Post(user_id=users[2], island_id=island.id, topic="워라밸", title="늦게 쓴 글", content="오늘 아침에 썼어요",
+                    comfort_type="empathy", visibility="public", status="published",
+                    created_at=out.as_of + timedelta(minutes=5))
+        db.add(late)
+        db.commit()
+        same = island_insights(db, island, me, set())
+        assert same.total_posts == MIN_POSTS
+        tomorrow = island_insights(db, island, me, set(), now=out.next_at + timedelta(minutes=1))
+        assert tomorrow.total_posts == MIN_POSTS + 1 and tomorrow.as_of == out.next_at
 
         # 차단한 사람의 글은 통째로 빠진다 → 4개라 리포트를 보여 주지 않음
         hidden = island_insights(db, island, me, {users[3]})
@@ -677,3 +693,38 @@ def test_island_insights_api_respects_island_access():
     assert r.status_code == 200, r.text
     assert {"enough", "headlines", "topics", "groups", "me", "warmest", "waiting"} <= set(r.json())
     assert http.get(f"/islands/{island_id('개발')}/insights", headers=me).status_code == 403
+
+
+def test_bottle_day_turns_at_8am_kst():
+    from datetime import datetime, timedelta, timezone
+
+    from app.routers.islands import bottle_day
+
+    kst = timezone(timedelta(hours=9))
+    # 아침 7시 59분은 아직 어제 편지, 8시부터 오늘 편지
+    assert bottle_day(datetime(2026, 11, 20, 7, 59, tzinfo=kst))[0] == "2026-11-19"
+    day, next_at = bottle_day(datetime(2026, 11, 20, 8, 0, tzinfo=kst))
+    assert day == "2026-11-20" and next_at == datetime(2026, 11, 21, 8, 0, tzinfo=kst)
+
+
+def test_similar_worries_share_one_map_bubble():
+    """내용이 닮은 이웃 고민은 지도에서 말풍선 하나로 합쳐진다. 내 글은 따로 보인다."""
+    from app.database import SessionLocal
+    from app.insights import _vector_cache
+
+    me, my_id = signup(job="영업")
+    sales = island_id("영업")
+    overtime = "야근이 너무 많아서 퇴근하고 나면 아무것도 못 하고 잠만 자요 매일 반복돼요"
+    writers = [signup(job="영업") for _ in range(3)]
+    ids = [write_post(h, island_id=sales, title=f"야근 고민 {i}", content=overtime) for i, (h, _) in enumerate(writers)]
+    write_post(me, island_id=sales, title="야근 고민 나도", content=overtime)
+    _vector_cache.clear()
+
+    neighbors = http.get(f"/islands/{sales}/neighbors", headers=me).json()
+    posts = {n["latest_post"]["id"]: (n["latest_post"], n["is_me"]) for n in neighbors if n["latest_post"]}
+    leads = {posts[pid][0]["bubble"] for pid in ids}
+    assert len(leads) == 1 and None not in leads  # 닮은 세 글이 한 말풍선으로
+    lead = leads.pop()
+    assert posts[lead][0]["bubble_size"] >= 3
+    mine = next(p for p, is_me in posts.values() if is_me)
+    assert mine["bubble"] is None  # 내 글은 합치지 않는다
