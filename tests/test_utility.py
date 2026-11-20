@@ -395,6 +395,23 @@ def test_island_temperature_rises_with_posts_and_comments():
     assert http.get(f"/islands/{sales}/temperature", headers=headers).json()["online"] >= 1
 
 
+def test_island_temperature_stays_within_human_body_range():
+    """사람 체온 기준: 아무도 없으면 35°, 아무리 붐벼도 42°를 넘지 않는다."""
+    from app.routers.islands import island_temperature, temperature_level
+
+    assert island_temperature(0, 0) == 35.0
+    assert island_temperature(10_000, 10_000) <= 42.0
+    temps = [island_temperature(n, n) for n in range(0, 200, 5)]
+    assert temps == sorted(temps)  # 글·댓글이 늘면 내려가지 않는다
+
+    assert temperature_level(35.0) == "cold"
+    assert temperature_level(35.7) == "mild"
+    assert temperature_level(36.5) == "warm"  # 사람 체온부터 따뜻한 섬
+    assert temperature_level(37.9) == "warm"
+    assert temperature_level(38.0) == "hot"  # 가장 큰 불
+    assert temperature_level(42.0) == "hot"
+
+
 def test_already_masked_tokens_do_not_block_the_post():
     from app.ai.check import _llm_issues
 

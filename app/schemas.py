@@ -194,7 +194,7 @@ class PresenceOut(BaseModel):
 
 
 class TemperatureOut(BaseModel):
-    """섬 온도: 최근 고민 글과 위로 댓글이 많을수록 올라간다 (36.5°가 목표)"""
+    """섬 온도: 최근 고민 글과 위로 댓글이 많을수록 35°에서 42° 쪽으로 올라간다 (36.5°가 목표, 38° 이상이 가장 큰 불)"""
     temperature: float
     level: Literal["cold", "mild", "warm", "hot"]
     posts: int

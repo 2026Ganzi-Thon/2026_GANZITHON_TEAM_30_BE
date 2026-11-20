@@ -316,10 +316,25 @@ def open_bottle(island_id: int, user: User = Depends(get_current_user), db: Sess
         db.commit()
 
 
+# 사람 체온 기준: 저체온(35°)에서 시작해 사람이 버틸 수 있는 최고 체온(42°)에 가까워진다
+TEMP_MIN, TEMP_MAX = 35.0, 42.0
+
+
 def island_temperature(posts: int, comments: int) -> float:
-    """글·댓글이 쌓일수록 오르되 끝없이 오르지 않게: 12°에서 시작해 40°에 가까워진다."""
+    """글·댓글이 쌓일수록 오르되 끝없이 오르지 않게: 35°에서 시작해 42°에 가까워진다 (넘지 않음)."""
     warmth = posts + comments * 0.5
-    return round(12 + 28 * (1 - math.exp(-warmth / 30)), 1)
+    return round(TEMP_MIN + (TEMP_MAX - TEMP_MIN) * (1 - math.exp(-warmth / 30)), 1)
+
+
+def temperature_level(temperature: float) -> str:
+    """모닥불 크기 단계: 38° 이상 hot(가장 큰 불), 사람 체온 36.5° 이상 warm, 35.7° 이상 mild, 그 아래 cold."""
+    if temperature >= 38.0:
+        return "hot"
+    if temperature >= 36.5:
+        return "warm"
+    if temperature >= 35.7:
+        return "mild"
+    return "cold"
 
 
 @router.get("/{island_id}/temperature", response_model=TemperatureOut)
@@ -335,7 +350,7 @@ def get_temperature(island_id: int, user: User = Depends(get_current_user), db: 
         .where(Comment.created_at >= since, Comment.deleted_at.is_(None), Comment.hidden_at.is_(None))
     ) or 0
     temperature = island_temperature(posts, comments)
-    level = "hot" if temperature >= 36.5 else "warm" if temperature >= 30 else "mild" if temperature >= 20 else "cold"
+    level = temperature_level(temperature)
     return TemperatureOut(
         temperature=temperature, level=level, posts=posts, comments=comments, days=ISLAND_COUNT_DAYS,
         online=len(presence.online(island.id)),
