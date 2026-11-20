@@ -435,6 +435,12 @@ def test_bottle_brings_a_worry_from_the_other_island_with_its_story():
     post_id = write_post(writer, island_id=common, title="이직 고민이 길어져요", content=_unique_text())
     root = first_ai_comment(writer, post_id)
     _reply(writer, post_id, root["id"], "한 달 지나서 결국 남기로 했어요. 마음이 편해졌어요")
+    # 이웃 댓글에 단 고맙다는 답글, 짧은 인사는 근황이 아니라 그 뒤 이야기로 오지 않는다
+    neighbor, _ = signup(job="개발")
+    r = http.post(f"/posts/{post_id}/comments", json={"content": "저도 비슷했어요. 응원해요"}, headers=neighbor)
+    assert r.status_code == 201, r.text
+    _reply(writer, post_id, r.json()["id"], "말씀 정말 고마워요. 덕분에 힘이 났어요")
+    _reply(writer, post_id, root["id"], "고마워요!")
 
     # 하루 한 통: 새로고침해도 같은 편지, 직무섬에선 통합섬 고민이 떠내려온다
     bottles = [http.get(f"/islands/{design}/bottle", headers=me).json() for _ in range(3)]

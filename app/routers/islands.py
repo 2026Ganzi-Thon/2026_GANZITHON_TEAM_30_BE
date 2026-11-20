@@ -3,9 +3,9 @@ import random
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from app import presence
 from app.config import COMFORT_TYPES, FOOTPRINT_HOURS, TOPIC_CATEGORIES, ISLAND_COUNT_DAYS, LEFT_CHARACTER, LEFT_NICKNAME
 from app.database import get_db
@@ -33,6 +33,8 @@ from app.schemas import (
 )
 
 router = APIRouter(prefix="/islands", tags=["islands"])
+
+FOLLOW_UP_MIN_CHARS = 10  # 이보다 짧은 글쓴이 댓글("고마워요!" 같은 인사)은 그 뒤 이야기로 보여 주지 않는다
 
 
 def to_author(user: User, island: Island) -> AuthorOut:
@@ -276,10 +278,16 @@ def get_bottle(island_id: int, user: User = Depends(get_current_user), db: Sessi
 
     from_island = db.get(Island, post.island_id)
     writer = db.get(User, post.user_id)
+    # 그 뒤 이야기 = 글쓴이가 남긴 근황. 이웃 댓글에 단 "고마워요" 답글이나 짧은 인사는 근황이 아니라 뺀다:
+    # 글에 바로 단 댓글이나 온도(AI) 댓글 아래 이어 쓴 글 중, 글자 수가 충분한 것만 쓴다
+    parent = aliased(Comment)
     follow_up = db.scalar(
         select(Comment.content)
+        .outerjoin(parent, parent.id == Comment.parent_id)
         .where(Comment.post_id == post.id, Comment.user_id == post.user_id,
-               Comment.deleted_at.is_(None), Comment.hidden_at.is_(None))
+               Comment.deleted_at.is_(None), Comment.hidden_at.is_(None),
+               or_(Comment.parent_id.is_(None), parent.is_ai.is_(True)),
+               func.length(func.trim(Comment.content)) >= FOLLOW_UP_MIN_CHARS)
         .order_by(Comment.id.desc())
         .limit(1)
     )
