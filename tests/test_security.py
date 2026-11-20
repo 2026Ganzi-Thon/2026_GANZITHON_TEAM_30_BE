@@ -356,6 +356,54 @@ def test_ai_output_that_breaks_rules_is_replaced(monkeypatch):
     assert text == ai_comment.fallback_comment("empathy", False)
 
 
+def test_ai_banmal_comment_is_rewritten_or_replaced(monkeypatch):
+    """AI 첫 댓글이 반말이면 다시 쓰게 하고, 끝까지 반말이면 기본 문장으로 바꾼다 (03800d2)."""
+    class FakePost:
+        title, content, comfort_type, topic = "제목", "본문이에요", "empathy", "번아웃·무기력"
+
+    banmal = "많이 힘들었겠다. 내가 옆에서 들어줄게."
+    polite = "많이 힘드셨죠. 오늘 하루도 정말 애쓰셨어요."
+    assert not ai_comment._is_polite(banmal)
+    assert ai_comment._is_polite(polite)
+    assert ai_comment._is_polite("버티느라 고생 많으셨습니다! 천천히 쉬어 가요~")
+
+    monkeypatch.setattr(ai_settings, "provider", lambda: "upstage")
+
+    replies = iter([banmal, polite])
+    monkeypatch.setattr(ai_client, "chat", lambda *a, **k: next(replies))
+    assert ai_comment.write_first_comment(FakePost(), crisis=False) == polite
+
+    calls = []
+    monkeypatch.setattr(ai_client, "chat", lambda *a, **k: calls.append(1) or banmal)
+    text = ai_comment.write_first_comment(FakePost(), crisis=False)
+    assert text == ai_comment.fallback_comment("empathy", False)
+    assert len(calls) == 3  # 처음 1번 + 다시 쓰기 2번
+
+
+def test_broken_ai_json_is_retried_once_then_falls_back_to_rules(monkeypatch):
+    """검사 AI가 깨진 JSON을 보내면 한 번 더 묻고, 그래도 깨지면 규칙 검사로 판단한다 (03800d2)."""
+    broken = '{"personal_info": {"detected": false},, "offensive": {"detected": false}}'
+    fine = '```json\n{"personal_info": {"detected": false}, "offensive": {"detected": false}}\n```'
+
+    replies = iter([broken, fine])
+    modes = []
+    monkeypatch.setattr(ai_client, "chat", lambda *a, json_mode=False, **k: modes.append(json_mode) or next(replies))
+    data = ai_client.chat_json("system", "user", timeout=1)
+    assert data["personal_info"] == {"detected": False}
+    assert modes == [True, True]  # JSON 모드로 요청하고, 깨지면 딱 한 번만 다시 묻는다
+
+    calls = []
+    monkeypatch.setattr(ai_client, "chat", lambda *a, **k: calls.append(1) or broken)
+    with pytest.raises(ai_client.AIUnavailable):
+        ai_client.chat_json("system", "user", timeout=1)
+    assert len(calls) == 2
+
+    monkeypatch.setattr(ai_settings, "provider", lambda: "upstage")
+    result = ai_check.check_text("연락은 010-1234-5678로 주세요", kind="post")
+    assert result.checked_by == "rules"
+    assert not result.ok and result.personal_info  # AI가 없어도 규칙 검사가 연락처를 잡는다
+
+
 def test_prompt_injection_text_is_wrapped_as_data():
     from app.ai import prompts
 

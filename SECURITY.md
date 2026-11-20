@@ -2,7 +2,7 @@
 
 - 대상: 간지톤 30팀 백엔드 (FastAPI)
 - 기준일: 2026-11-20
-- 점검 방법: `pytest -q`로 아래 표의 확인 테스트를 실행합니다. 2026-11-20 기준 113개 테스트가 모두 통과했습니다(보안 전용 `tests/test_security.py` 39개 포함). CI(`.github/workflows/ci.yml`)도 push할 때마다 테스트, `pip-audit`, `gitleaks`를 실행합니다. 날짜별 결과는 [5. 점검 기록](#5-점검-기록), AI로 작성한 코드를 어떻게 검증했는지는 [6. AI 생성 코드 검증](#6-ai-생성-코드-검증)에 있습니다.
+- 점검 방법: `pytest -q`로 아래 표의 확인 테스트를 실행합니다. 2026-11-20 기준 115개 테스트가 모두 통과했습니다(보안 전용 `tests/test_security.py` 41개 포함). CI(`.github/workflows/ci.yml`)도 push할 때마다 테스트, `pip-audit`, `gitleaks`를 실행합니다. 날짜별 결과는 [5. 점검 기록](#5-점검-기록), AI로 작성한 코드를 어떻게 검증했는지는 [6. AI 생성 코드 검증](#6-ai-생성-코드-검증)에 있습니다.
 
 ON-DO는 직장인의 고민, 즉 마음 건강과 관련된 민감한 이야기를 다룹니다. 그래서 개인정보는 **처음부터 적게 모으고**, 모은 정보는 **본인만 보게** 하고, 외부 AI에는 **가린 뒤에만** 보낸다는 원칙을 따릅니다.
 
@@ -84,10 +84,11 @@ ON-DO는 직장인의 고민, 즉 마음 건강과 관련된 민감한 이야기
 
 | 날짜 | 점검 | 방법 | 결과 | 조치 |
 |---|---|---|---|---|
-| 2026-11-17 | AI 응답 형식·말투 | 배포 환경에서 Upstage 응답을 직접 확인 | AI가 JSON을 깨뜨려 보내거나, 첫 댓글을 반말로 쓰는 경우를 발견 | JSON 파싱을 보강하고 반말 문장을 걸러 다시 쓰게 함 (`03800d2`) |
+| 2026-11-17 | AI 응답 형식·말투 | 실제 Upstage 응답을 반복 호출해 확인 | 검사 응답의 약 8%가 깨진 JSON(쉼표 중복 등)이라 규칙 검사로 떨어지고, 첫 댓글의 약 7%가 반말인 것을 발견 | JSON 모드로 요청하고 깨지면 한 번 더 묻게 함. 반말이면 다시 쓰고, 끝까지 반말이면 기본 문장으로 바꿈 (`03800d2`) |
 | 2026-11-18 | CI 동작 | GitHub Actions 로그 확인 | 설정 문제로 CI에서 테스트가 실제로 실행되지 않고 있었음 | 워크플로를 고쳐 SQLite·PostgreSQL 양쪽에서 테스트가 돌게 함 (`026dbbc`) |
 | 2026-11-18 | 시연용 인증코드 노출 (T15) | 운영 설정 조합별로 코드 검토 | `EMAIL_MODE=demo`로 운영하면 남의 이메일로 로그인 코드를 받을 수 있는 경로를 발견 | 운영에서는 허용한 시연 계정에만 코드를 주고, 그 외는 503으로 거절. 테스트 2개 추가 (`2dec352`) |
-| 2026-11-20 | 전체 회귀 | 로컬 `pytest -q` | 113개 모두 통과 | - |
+| 2026-11-20 | 반말·깨진 JSON 처리 (`03800d2`) | 가짜 AI로 반말·깨진 JSON을 돌려주는 테스트 2개 작성. 고친 코드를 일부러 되돌려(항상 존댓말로 판정, 재질문 없음) 테스트가 실패하는지도 확인 | 되돌리면 2개 모두 실패, 원래 코드에서는 통과 | 배포 환경에서만 확인하던 동작을 회귀 테스트로 고정 |
+| 2026-11-20 | 전체 회귀 | 로컬 `pytest -q` | 115개 모두 통과 | - |
 | 2026-11-20 | CI 전체 | push 시 자동 실행 (테스트 SQLite·PostgreSQL 16, `pip-audit`, `gitleaks`) | `main`·`BE-A`의 `6e5c5e7`에서 모두 성공 | - |
 | 2026-11-20 | 배포 화면에서 게시 전 검사 | 배포된 FE(on-dof.onrender.com)에서 회사명·실명·전화번호를 넣은 글 작성 | 3곳을 찾아 고친 문장을 제안하고, 모두 적용하면 "서버 점검 통과"로 바뀜. 고치기 전에는 게시 버튼이 잠김 | - (점검만 하고 글은 올리지 않음) |
 | 2026-11-20 | 탈퇴 후 토큰 (T3) | 배포 서버에서 시연용 계정 탈퇴 후 같은 토큰으로 다시 요청 | 탈퇴 204, 이후 같은 토큰은 401 | - |
@@ -113,6 +114,8 @@ ON-DO는 직장인의 고민, 즉 마음 건강과 관련된 민감한 이야기
 |---|---|---|
 | 게시 전 검사 (규칙 + LLM) | LLM 판단이 빠지거나 틀림 | `test_llm_detection_is_merged`, `test_small_company_names_are_caught_without_ai_but_common_words_pass` |
 | LLM이 실패할 때 | 외부 AI 장애로 글쓰기가 멈춤 | `test_llm_failure_falls_back_to_rules_and_post_still_publishes` |
+| LLM이 깨진 JSON을 보낼 때 | 검사 결과를 읽지 못해 AI 검사가 통째로 빠짐 | `test_broken_ai_json_is_retried_once_then_falls_back_to_rules` |
+| AI 첫 댓글 말투 | 위로 댓글이 반말로 달림 | `test_ai_banmal_comment_is_rewritten_or_replaced` |
 | LLM이 엉뚱한 곳을 지적할 때 | 이미 가린 글을 잘못 막음 | `test_ai_that_points_nowhere_on_a_masked_post_is_asked_again`, `test_already_masked_tokens_do_not_block_the_post` |
 | AI 첫 댓글 | 개인정보가 섞인 답, 위기 글에 연락처 누락 | `test_ai_output_that_breaks_rules_is_replaced`, `test_first_comment_uses_llm_and_adds_hotline_for_crisis` |
 | AI 이어 답글 | 끝없이 답하거나 사람 대화를 가로챔 | `test_ai_follow_up_stops_after_limit_and_hands_off`, `test_ai_hands_off_once_a_neighbor_arrives`, `test_ai_daily_reply_limit_per_author` |
@@ -125,6 +128,5 @@ ON-DO는 직장인의 고민, 즉 마음 건강과 관련된 민감한 이야기
 
 | 항목 | 현재 확인 방법 | 계획 |
 |---|---|---|
-| AI 첫 댓글의 반말 걸러내기 (`03800d2`) | 배포 환경에서 직접 확인 | 반말 응답을 흉내 내는 가짜 AI로 테스트 추가 |
-| 깨진 JSON 응답 처리 | 배포 환경에서 직접 확인 | 깨진 JSON을 돌려주는 가짜 AI로 테스트 추가 |
+| 반말 판정의 한계 | 문장 끝이 "요·니다·죠"인지로만 봅니다. "~해요?"처럼 끝나는 존댓말은 통과하지만, 존댓말 속 무례한 표현은 규칙 검사(T19)에 맡깁니다. | 실제 응답에서 놓친 사례가 나오면 테스트 문장으로 추가 |
 | 실제 Upstage 응답 품질 | 시연 데이터로 사람이 읽고 확인 | 오탐·미탐 사례를 모아 회귀 테스트로 만들기 |
