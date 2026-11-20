@@ -145,10 +145,6 @@ def with_and(word: str) -> str:
     return "과" if _has_final(word) else "와"
 
 
-def topic_mark(word: str) -> str:
-    return "은" if _has_final(word) else "는"
-
-
 def pct(ratio: float) -> int:
     return round(ratio * 100)
 
@@ -345,41 +341,31 @@ def todays_pair(db: Session, island: Island, me: User, hidden: set[int], now: da
     return warmest, waiting
 
 
+HEADLINE_MAX = 3  # 섬지기 창이 길다는 피드백: 요약은 3줄까지, 아래 그래프와 겹치는 문장은 뒤로
+
+
 def headlines(out: InsightsOut, island: Island) -> list[str]:
+    """한눈에 보기 요약. 중요한 순서로 만들고 앞의 HEADLINE_MAX줄만 보여 준다.
+    시간대·위로·묶음·직무 비교는 아래 섹션에 그래프가 따로 있어서, 앞 줄이 모자랄 때만 채운다."""
     lines = []
     top = [t for t in out.topics if out.topics and t.count == out.topics[0].count]
     if top and top[0].count >= 2:
         names = "'·'".join(t.label for t in top[:2])
         share = ("각 " if len(top) > 1 else "") + f"{pct(top[0].ratio)}%"
-        lines.append(f"이 섬에 쌓인 고민 {out.total_posts}개 중 가장 많은 건 '{names}'{copula(top[min(1, len(top) - 1)].label)} ({share}).")
+        lines.append(f"가장 많은 고민은 '{names}'{copula(top[min(1, len(top) - 1)].label)} ({share}).")
     elif out.topics:
-        lines.append(f"이 섬의 고민 {out.total_posts}개는 {out.topic_kinds}가지 주제에 고루 퍼져 있어요.")
-    if out.categories:
-        c = out.categories[0]
-        lines.append(f"고민의 {pct(c.ratio)}%가 '{c.label}' 쪽이에요.")
+        lines.append(f"고민이 {out.topic_kinds}가지 주제에 고루 퍼져 있어요.")
     if out.rising:
         r = out.rising
-        lines.append(f"이번 주엔 '{r.topic}' 고민이 늘었어요 (지난주 {r.last_week}개 → 이번 주 {r.this_week}개).")
-    if out.time.busiest and out.time.busiest_count >= 2:
-        lines.append(f"고민은 {out.time.busiest}에 가장 많이 올라와요.")
-    if out.groups:
-        g = out.groups[0]
-        lines.append(f"'{g.title}'{with_and(g.title)} 결이 닮은 고민이 {g.size}개 모여 있어요.")
-    if out.comfort:
-        c = out.comfort[0]
-        lines.append(f"가장 많이 바란 위로는 '{c.label}'{copula(c.label)} ({pct(c.ratio)}%).")
+        lines.append(f"이번 주엔 '{r.topic}' 고민이 늘었어요 ({r.last_week}개 → {r.this_week}개).")
     if out.me and out.me.neighbors:
         lines.append(f"내 고민과 닮은 고민을 쓴 이웃이 {out.me.neighbors}명 있어요.")
-    here = next((j for j in out.jobs if j.island_id == island.id), None)
-    others = [j for j in out.jobs if j.island_id != island.id and (here is None or j.topic != here.topic)]
-    if here and others:
-        o = others[0]
-        lines.append(f"{here.island_name}{topic_mark(here.island_name)} '{here.topic}', "
-                     f"{o.island_name}{topic_mark(o.island_name)} '{o.topic}' 고민이 가장 많아요.")
-    elif island.type == "common" and len(others) >= 2:
-        pairs = ", ".join(f"{j.island_name} '{j.topic}'" for j in others[:3])
-        lines.append(f"직무섬마다 가장 많은 고민: {pairs}.")
-    return lines
+    if out.time.busiest and out.time.busiest_count >= 2:
+        lines.append(f"고민은 {out.time.busiest}에 가장 많이 올라와요.")
+    if out.comfort:
+        c = out.comfort[0]
+        lines.append(f"가장 많이 바란 위로는 '{c.label}'{copula(c.label)}.")
+    return lines[:HEADLINE_MAX]
 
 
 _report_cache: dict[tuple, InsightsOut] = {}

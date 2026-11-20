@@ -578,6 +578,8 @@ def test_island_keeper_shares_weekly_question_news_and_rules():
     assert keeper["week"]["comforts"] == before["comforts"] + 1
     # 신고 몇 번이면 가려지는지는 화면에 보여주지 않음 (악용 방지)
     assert not any(f"{keeper['report_hide_threshold']}번" in rule for rule in keeper["rules"])
+    # 섬지기 창이 길지 않게 원칙은 3줄, 한 줄은 짧게
+    assert len(keeper["rules"]) == 3 and max(len(rule) for rule in keeper["rules"]) <= 30
     assert {"109", "1577-0199"} <= {r["phone"] for r in keeper["crisis_support"]["resources"]}
     # 다른 직무섬의 섬지기는 볼 수 없다
     assert http.get(f"/islands/{island_id('영업')}/keeper", headers=me).status_code in (403, 404)
@@ -683,6 +685,7 @@ def test_island_insights_report():
         assert out.warmest.post_id == made[1].id and out.warmest.count == 2
         assert out.waiting is not None and out.waiting.post_id not in (made[0].id, made[3].id)  # 내 글·답 달린 글 제외
         assert any("업무량·스트레스" in line for line in out.headlines)
+        assert len(out.headlines) <= 3  # 섬지기 창이 길어지지 않게 요약은 3줄까지
         assert out.as_of.hour == 8 and out.next_at - out.as_of == timedelta(days=1)
 
         # 아침 8시 뒤에 올라온 글은 내일 리포트에 들어간다 (오늘 리포트는 그대로)
