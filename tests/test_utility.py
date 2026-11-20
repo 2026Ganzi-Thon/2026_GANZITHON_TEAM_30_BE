@@ -532,17 +532,24 @@ def test_activity_titles_grow_and_can_be_chosen():
     helper, helper_id = signup()
     assert http.get("/users/me/titles", headers=helper).json()["current"] is None
 
+    # 답을 기다리던 고민에 처음으로 위로를 건네면: 새싹 이웃 + 먼저 다가간 이웃(더 높은 등급이 대표)
     post_id = write_post(author)
     comment = http.post(f"/posts/{post_id}/comments", json={"content": "저도 그랬어요. 천천히 해 봐요"}, headers=helper).json()
     titles = http.get("/users/me/titles", headers=helper).json()
-    assert titles["current"]["key"] == "sprout" and titles["earned_count"] == 1
-
-    # 글쓴이가 고마워요를 누르면 더 높은 칭호가 대표로
-    http.post(f"/posts/{post_id}/comments/{comment['id']}/thanks", headers=author)
+    assert titles["current"]["key"] == "first_comfort" and titles["earned_count"] == 2
     detail = http.get(f"/posts/{post_id}", headers=author).json()
     mine = next(c for c in detail["comments"] if c["id"] == comment["id"])
-    assert mine["author"]["title"]["key"] == "thanked" and mine["author"]["title"]["tier"] == 2
+    assert mine["author"]["title"]["key"] == "first_comfort" and mine["author"]["title"]["tier"] == 2
     assert detail["author"]["title"]["key"] == "first_post"  # 글쓴이는 첫 고민 칭호
+
+    # 이미 이웃 위로가 있는 글에 두 번째로 단 위로, 같은 글에 다시 단 위로는 첫 위로가 아니다
+    late, _ = signup()
+    http.post(f"/posts/{post_id}/comments", json={"content": "저도 응원해요. 힘내세요"}, headers=late)
+    http.post(f"/posts/{post_id}/comments", json={"content": "하나 더 남겨요. 오늘도 잘 버텼어요"}, headers=helper)
+    late_titles = http.get("/users/me/titles", headers=late).json()
+    assert late_titles["current"]["key"] == "sprout" and late_titles["earned_count"] == 1
+    progress = {t["key"]: t["progress"] for t in http.get("/users/me/titles", headers=helper).json()["items"]}
+    assert progress["shining"] == 1 and progress["lighthouse"] == 1
 
     # 얻은 칭호만 대표로 고를 수 있고, 비우면 다시 자동
     assert http.patch("/users/me/title", json={"key": "lighthouse"}, headers=helper).status_code == 400
@@ -550,7 +557,7 @@ def test_activity_titles_grow_and_can_be_chosen():
     assert chosen["current"]["key"] == "sprout" and chosen["chosen_key"] == "sprout"
     profile = http.get(f"/users/{helper_id}/profile", params={"island_id": detail["island_id"]}, headers=author).json()
     assert profile["title"]["key"] == "sprout"
-    assert http.patch("/users/me/title", json={"key": None}, headers=helper).json()["current"]["key"] == "thanked"
+    assert http.patch("/users/me/title", json={"key": None}, headers=helper).json()["current"]["key"] == "first_comfort"
 
 
 def test_island_keeper_shares_weekly_question_news_and_rules():

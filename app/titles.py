@@ -1,4 +1,4 @@
-"""활동 칭호: 위로·고마움·고민 나누기 같은 활동으로 얻는 칭호.
+"""활동 칭호: 위로·첫 위로·고민 나누기 같은 활동으로 얻는 칭호.
 
 - 칭호마다 (어떤 활동을, 몇 번) 조건이 있다. 활동 수는 DB에서 사람별로 한 번에 묶어 센다.
 - 대표 칭호: 직접 고른 칭호(users.title_key)가 아직 유효하면 그것, 아니면 가장 높은 등급의 칭호.
@@ -33,12 +33,12 @@ TITLES: list[Title] = [
     Title("heart_rich", "💗", "공감 부자", "이웃의 고민 10개에 공감했어요", 2, "reactions", 10),
     Title("honest", "🪶", "솔직한 이웃", "이웃들과 고민을 5번 나눴어요", 2, "posts", 5),
     Title("storyteller", "📖", "그 뒤 이야기꾼", "내 고민에 이야기를 3번 이어 썼어요", 2, "follow_ups", 3),
-    Title("thanked", "💌", "고마움을 받은 이웃", "건넨 위로가 처음으로 고마움을 받았어요", 2, "thanks", 1),
+    Title("first_comfort", "💌", "먼저 다가간 이웃", "답을 기다리던 고민에 처음으로 위로를 건넸어요", 2, "first_comforts", 1),
     Title("guide", "🗺️", "섬의 길잡이", "서로 다른 고민 10개에 위로를 건넸어요", 3, "helped", 10),
     Title("campfire", "🔥", "모닥불 지킴이", "이웃에게 위로를 15번 건넸어요", 3, "comments", 15),
-    Title("shining", "✨", "빛나는 위로꾼", "건넨 위로가 고마움을 3번 받았어요", 3, "thanks", 3),
+    Title("shining", "✨", "빛나는 위로꾼", "답을 기다리던 고민 3개에 가장 먼저 위로를 건넸어요", 3, "first_comforts", 3),
     Title("lantern", "🏮", "섬의 등불", "이웃에게 위로를 30번 건넸어요", 4, "comments", 30),
-    Title("lighthouse", "🌟", "섬의 등대", "건넨 위로가 고마움을 10번 받았어요", 4, "thanks", 10),
+    Title("lighthouse", "🌟", "섬의 등대", "홀로 기다리던 고민 10개에 가장 먼저 불을 밝혔어요", 4, "first_comforts", 10),
 ]
 BY_KEY = {t.key: t for t in TITLES}
 TIER_NAMES = {1: "새싹", 2: "따뜻한", 3: "빛나는", 4: "전설"}
@@ -48,7 +48,7 @@ STAT_LABELS = {
     "islands": "다녀온 섬",
     "reactions": "공감",
     "follow_ups": "이어 쓴 이야기",
-    "thanks": "받은 고마움",
+    "first_comforts": "첫 위로",
     "helped": "위로한 고민",
 }
 
@@ -73,7 +73,17 @@ def activity_stats(db: Session, user_ids: Iterable[int]) -> dict[int, dict[str, 
     base = select(Comment.user_id).join(target, target.id == Comment.post_id)
     fill("comments", base.add_columns(func.count()).where(*given).group_by(Comment.user_id))
     fill("helped", base.add_columns(func.count(func.distinct(Comment.post_id))).where(*given).group_by(Comment.user_id))
-    fill("thanks", base.add_columns(func.count()).where(*given, Comment.thanked_at.is_not(None)).group_by(Comment.user_id))
+    # 첫 위로: 남의 글에 달린 이웃(사람) 댓글 중 가장 먼저 단 것. 온도(AI) 댓글은 이웃 댓글로 치지 않는다.
+    # 지워지거나 가려진 댓글은 빼고 센다 → 첫 댓글이 지워지면 그다음 이웃 댓글이 첫 위로가 된다
+    first_ids = (
+        select(func.min(Comment.id)).join(target, target.id == Comment.post_id)
+        .where(Comment.is_ai.is_(False), Comment.user_id.is_not(None),
+               Comment.deleted_at.is_(None), Comment.hidden_at.is_(None), target.user_id != Comment.user_id)
+        .group_by(Comment.post_id)
+    )
+    fill("first_comforts", select(Comment.user_id, func.count()).where(
+        Comment.user_id.in_(ids), Comment.id.in_(first_ids),
+    ).group_by(Comment.user_id))
     fill("follow_ups", base.add_columns(func.count()).where(
         Comment.user_id.in_(ids), Comment.is_ai.is_(False), Comment.deleted_at.is_(None),
         target.user_id == Comment.user_id, target.visibility == "public",  # 나만 보기 글의 AI 대화는 빼기
