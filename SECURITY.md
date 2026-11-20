@@ -1,8 +1,8 @@
 # ON-DO 보안 설계와 점검
 
 - 대상: 간지톤 30팀 백엔드 (FastAPI)
-- 기준일: 2026-11-18
-- 점검 방법: `pytest -q`로 아래 표의 확인 테스트를 실행합니다. 2026-11-18 기준 67개 테스트가 모두 통과했습니다. CI(`.github/workflows/ci.yml`)도 push할 때마다 테스트, `pip-audit`, `gitleaks`를 실행합니다.
+- 기준일: 2026-11-20
+- 점검 방법: `pytest -q`로 아래 표의 확인 테스트를 실행합니다. 2026-11-20 기준 113개 테스트가 모두 통과했습니다(보안 전용 `tests/test_security.py` 39개 포함). CI(`.github/workflows/ci.yml`)도 push할 때마다 테스트, `pip-audit`, `gitleaks`를 실행합니다. 날짜별 결과는 [5. 점검 기록](#5-점검-기록), AI로 작성한 코드를 어떻게 검증했는지는 [6. AI 생성 코드 검증](#6-ai-생성-코드-검증)에 있습니다.
 
 ON-DO는 직장인의 고민, 즉 마음 건강과 관련된 민감한 이야기를 다룹니다. 그래서 개인정보는 **처음부터 적게 모으고**, 모은 정보는 **본인만 보게** 하고, 외부 AI에는 **가린 뒤에만** 보낸다는 원칙을 따릅니다.
 
@@ -77,3 +77,54 @@ ON-DO는 직장인의 고민, 즉 마음 건강과 관련된 민감한 이야기
 | 이메일 인증의 회사 소속 증명 | 이메일 소유만 확인합니다. | 회사 도메인 허용 목록 검증을 추가합니다. |
 | 운영 화면 | 운영 API(`/admin/moderation`)만 있고 화면은 없습니다. | 운영진용 간단한 페이지를 붙입니다. |
 | 회사 메일 여러 개로 신고 | 새 계정은 0.5점, AI 재검사, 운영 검토로 막습니다. | 회사 도메인당 신고 점수 상한을 둡니다. |
+
+## 5. 점검 기록
+
+"무엇을, 언제, 어떻게 확인했고, 문제가 있으면 어떻게 고쳤는지"를 남깁니다. 커밋 해시로 실제 변경 내용을 확인할 수 있습니다.
+
+| 날짜 | 점검 | 방법 | 결과 | 조치 |
+|---|---|---|---|---|
+| 2026-11-17 | AI 응답 형식·말투 | 배포 환경에서 Upstage 응답을 직접 확인 | AI가 JSON을 깨뜨려 보내거나, 첫 댓글을 반말로 쓰는 경우를 발견 | JSON 파싱을 보강하고 반말 문장을 걸러 다시 쓰게 함 (`03800d2`) |
+| 2026-11-18 | CI 동작 | GitHub Actions 로그 확인 | 설정 문제로 CI에서 테스트가 실제로 실행되지 않고 있었음 | 워크플로를 고쳐 SQLite·PostgreSQL 양쪽에서 테스트가 돌게 함 (`026dbbc`) |
+| 2026-11-18 | 시연용 인증코드 노출 (T15) | 운영 설정 조합별로 코드 검토 | `EMAIL_MODE=demo`로 운영하면 남의 이메일로 로그인 코드를 받을 수 있는 경로를 발견 | 운영에서는 허용한 시연 계정에만 코드를 주고, 그 외는 503으로 거절. 테스트 2개 추가 (`2dec352`) |
+| 2026-11-20 | 전체 회귀 | 로컬 `pytest -q` | 113개 모두 통과 | - |
+| 2026-11-20 | CI 전체 | push 시 자동 실행 (테스트 SQLite·PostgreSQL 16, `pip-audit`, `gitleaks`) | `main`·`BE-A`의 `6e5c5e7`에서 모두 성공 | - |
+| 2026-11-20 | 배포 화면에서 게시 전 검사 | 배포된 FE(on-dof.onrender.com)에서 회사명·실명·전화번호를 넣은 글 작성 | 3곳을 찾아 고친 문장을 제안하고, 모두 적용하면 "서버 점검 통과"로 바뀜. 고치기 전에는 게시 버튼이 잠김 | - (점검만 하고 글은 올리지 않음) |
+| 2026-11-20 | 탈퇴 후 토큰 (T3) | 배포 서버에서 시연용 계정 탈퇴 후 같은 토큰으로 다시 요청 | 탈퇴 204, 이후 같은 토큰은 401 | - |
+
+## 6. AI 생성 코드 검증
+
+이 백엔드는 AI 코딩 도구의 도움을 받아 작성했습니다. AI가 쓴 코드는 "그럴듯해 보이는 코드"일 수 있으므로, 아래 원칙으로 **사람이 확인한 것만** 반영합니다. (서비스 안에서 AI가 *생성한 답변*을 검사하는 장치는 위 T17~T19, T21에 따로 있습니다.)
+
+### 6.1 반영 원칙
+
+| 원칙 | 하는 일 |
+|---|---|
+| 테스트 없이는 반영하지 않음 | 기능을 바꿀 때 그 동작을 확인하는 테스트를 함께 추가하고, 전체 테스트가 통과해야 커밋합니다. 보안 관련 동작은 `tests/test_security.py`에 모읍니다. |
+| 실패하는 길을 먼저 테스트 | AI 코드는 정상 흐름만 잘 짜는 경향이 있어서, 외부 AI 실패·시간 초과·이상한 응답 같은 **실패 경로**를 따로 테스트합니다(6.2). |
+| 실제 환경에서 다시 확인 | 테스트는 가짜 AI(`local` 모드)로 돌기 때문에, 외부 AI와 연결되는 기능은 배포 환경에서 직접 써 보고 확인합니다(5장 2026-11-17, 2026-11-20 기록). |
+| 의존성 검증 | AI가 제안한 라이브러리는 버전을 `==`로 고정하고, CI의 `pip-audit`으로 알려진 취약점을 검사합니다. |
+| 비밀값 검증 | AI가 예시로 넣은 키·비밀번호가 섞여 들어가지 않도록 CI의 `gitleaks`가 커밋 이력 전체를 검사합니다. 배포 환경에서 기본 비밀키를 쓰면 서버가 시작을 거부합니다(T2). |
+| 사람이 커밋 메시지로 설명 | 무엇을 왜 바꿨는지 커밋 메시지에 적어, 나중에 되짚어 볼 수 있게 합니다. |
+
+### 6.2 AI가 관여하는 핵심 로직과 확인 테스트
+
+| 로직 | 무엇이 잘못될 수 있나 | 확인 테스트 |
+|---|---|---|
+| 게시 전 검사 (규칙 + LLM) | LLM 판단이 빠지거나 틀림 | `test_llm_detection_is_merged`, `test_small_company_names_are_caught_without_ai_but_common_words_pass` |
+| LLM이 실패할 때 | 외부 AI 장애로 글쓰기가 멈춤 | `test_llm_failure_falls_back_to_rules_and_post_still_publishes` |
+| LLM이 엉뚱한 곳을 지적할 때 | 이미 가린 글을 잘못 막음 | `test_ai_that_points_nowhere_on_a_masked_post_is_asked_again`, `test_already_masked_tokens_do_not_block_the_post` |
+| AI 첫 댓글 | 개인정보가 섞인 답, 위기 글에 연락처 누락 | `test_ai_output_that_breaks_rules_is_replaced`, `test_first_comment_uses_llm_and_adds_hotline_for_crisis` |
+| AI 이어 답글 | 끝없이 답하거나 사람 대화를 가로챔 | `test_ai_follow_up_stops_after_limit_and_hands_off`, `test_ai_hands_off_once_a_neighbor_arrives`, `test_ai_daily_reply_limit_per_author` |
+| 프롬프트 조립 | 사용자 글이 지시로 해석됨 | `test_prompt_injection_text_is_wrapped_as_data` |
+| 외부 AI로 보내는 내용 | 연락처·주민번호가 그대로 나감 | `test_personal_info_is_masked_before_reaching_llm` |
+| 임베딩·유사 검색 | 나만 보기 글이 검색됨, 차단한 사람 글이 섞임 | `test_private_post_not_listed_no_ai_comment_no_embedding`, `test_similar_search_block_filter_and_empty_result` |
+| 공개 범위 변경 | 비공개로 바꿨는데 벡터가 남음 | `test_visibility_switch_updates_embedding_and_ai_comment`, `test_delete_removes_post_and_embedding` |
+
+### 6.3 아직 테스트로 고정하지 못한 것
+
+| 항목 | 현재 확인 방법 | 계획 |
+|---|---|---|
+| AI 첫 댓글의 반말 걸러내기 (`03800d2`) | 배포 환경에서 직접 확인 | 반말 응답을 흉내 내는 가짜 AI로 테스트 추가 |
+| 깨진 JSON 응답 처리 | 배포 환경에서 직접 확인 | 깨진 JSON을 돌려주는 가짜 AI로 테스트 추가 |
+| 실제 Upstage 응답 품질 | 시연 데이터로 사람이 읽고 확인 | 오탐·미탐 사례를 모아 회귀 테스트로 만들기 |
